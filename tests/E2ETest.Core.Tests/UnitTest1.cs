@@ -124,6 +124,20 @@ public sealed class ManifestTests : IDisposable
     }
 
     [Fact]
+    public void ComparisonAcceptsSchema3AutomaticFinalScreenshot()
+    {
+        var manifest = CreateValidManifest();
+        manifest.SchemaVersion = 3;
+        manifest.Shots[0].Kind = "final";
+        manifest.Shots[0].AtMs = manifest.DurationMs;
+        manifest.Events.Clear();
+
+        ManifestValidator.ValidateForComparison(manifest, _testCaseDir, requireBaselineFiles: true);
+        Assert.Throws<InvalidDataException>(() =>
+            ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
+    }
+
+    [Fact]
     public void StrictTimelineIsDefault()
     {
         Assert.Equal(0, new ReplaySettings().MaxIdleGapMs);

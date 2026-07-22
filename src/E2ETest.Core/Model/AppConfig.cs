@@ -38,7 +38,6 @@ public sealed class AppConfig
     public AiConfig Ai { get; set; } = new();
     public PixelConfig Pixel { get; set; } = new();
     public HotkeyConfig Hotkeys { get; set; } = new();
-    public ThresholdConfig Thresholds { get; set; } = new();
     public PathsConfig Paths { get; set; } = new();
     public RecordConfig Record { get; set; } = new();
     public ReplayHooksConfig ReplayHooks { get; set; } = new();

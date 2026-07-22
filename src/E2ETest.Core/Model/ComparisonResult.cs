@@ -56,6 +56,8 @@ public sealed class TestCaseComparisonResult
     public string Name { get; set; } = "";
     public string Status { get; set; } = "pending";
     public string FinalVerdict { get; set; } = "pending";
+    /// <summary>对比过程被取消；已完成的本地判定仍保留在 Status/FinalVerdict。</summary>
+    public bool ComparisonCancelled { get; set; }
     public int TotalShots { get; set; }
     public long? DurationMs { get; set; }
     public string? Error { get; set; }
@@ -63,7 +65,6 @@ public sealed class TestCaseComparisonResult
     public List<ComparisonIncident> Incidents { get; set; } = new();
     public int AttentionScore { get; set; }
     public string AttentionLevel { get; set; } = "P3";
-    public string? AiTimelinePath { get; set; }
     public AiAssessment Ai { get; set; } = new();
 }
 
@@ -98,12 +99,14 @@ public sealed class ComparisonRoundResult
     public string ReplayStatus { get; set; } = "unknown";
     public string? ReplayError { get; set; }
     public bool ReplayLifecycleSucceeded { get; set; }
+    public bool ComparisonCancelled { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset FinishedAt { get; set; }
     public int PassedTestCases { get; set; }
     public int FailedTestCases { get; set; }
     public int UncertainTestCases { get; set; }
     public int SkippedTestCases { get; set; }
+    public int CancelledTestCases { get; set; }
     public int FinalPassedTestCases { get; set; }
     public int FinalFailedTestCases { get; set; }
     public int FinalNeedsReviewTestCases { get; set; }

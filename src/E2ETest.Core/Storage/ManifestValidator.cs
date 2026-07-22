@@ -9,8 +9,16 @@ public static class ManifestValidator
     public const int CurrentSchemaVersion = 4;
 
     public static void Validate(TestCaseManifest manifest, string testCaseDir, bool requireBaselineFiles)
+        => ValidateCore(manifest, testCaseDir, requireBaselineFiles, allowLegacyForComparison: false);
+
+    /// <summary>只供历史 replay 的对比读取；schema 3 可含一张旧式自动结尾图，但不能用于再次 replay。</summary>
+    public static void ValidateForComparison(TestCaseManifest manifest, string testCaseDir, bool requireBaselineFiles)
+        => ValidateCore(manifest, testCaseDir, requireBaselineFiles, allowLegacyForComparison: true);
+
+    private static void ValidateCore(TestCaseManifest manifest, string testCaseDir, bool requireBaselineFiles, bool allowLegacyForComparison)
     {
-        if (manifest.SchemaVersion != CurrentSchemaVersion)
+        bool legacySchema3 = allowLegacyForComparison && manifest.SchemaVersion == 3;
+        if (manifest.SchemaVersion != CurrentSchemaVersion && !legacySchema3)
             throw new InvalidDataException($"不支持的 manifest schemaVersion: {manifest.SchemaVersion}");
         if (manifest.Capture is null || manifest.Capture.Screen is null || manifest.Capture.CropRect is null ||
             manifest.Replay is null || manifest.Events is null || manifest.Shots is null)
@@ -69,7 +77,7 @@ public static class ManifestValidator
         {
             if (shot.Index <= 0 || !shotsByIndex.TryAdd(shot.Index, shot))
                 throw new InvalidDataException($"截图 index 无效或重复: {shot.Index}");
-            if (shot.Kind != "manual")
+            if (legacySchema3 ? shot.Kind is not ("manual" or "final") : shot.Kind != "manual")
                 throw new InvalidDataException($"截图必须由录制时手动触发: {shot.Index}");
             if (shot.AtMs < 0 || shot.AtMs > manifest.DurationMs)
                 throw new InvalidDataException($"截图时间超出录制范围: {shot.Index}");
@@ -93,8 +101,15 @@ public static class ManifestValidator
         if (!Enumerable.Range(1, manifest.Shots.Count).All(shotsByIndex.ContainsKey))
             throw new InvalidDataException("截图 index 必须从 1 开始连续递增。");
 
+        if (legacySchema3)
+        {
+            var finalShots = manifest.Shots.Where(shot => shot.Kind == "final").ToList();
+            if (finalShots.Count != 1 || finalShots[0].AtMs != manifest.DurationMs)
+                throw new InvalidDataException("旧版 manifest 必须有且仅有一张位于 durationMs 的结尾图。");
+        }
+
         var screenshotEvents = manifest.Events.OfType<ScreenshotEvent>().ToList();
-        foreach (var manual in manifest.Shots)
+        foreach (var manual in manifest.Shots.Where(shot => shot.Kind == "manual"))
         {
             var matches = screenshotEvents.Where(e => e.ShotIndex == manual.Index).ToList();
             if (matches.Count != 1 || matches[0].T != manual.AtMs)

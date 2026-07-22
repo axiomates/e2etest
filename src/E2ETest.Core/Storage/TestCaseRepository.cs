@@ -74,7 +74,11 @@ public sealed class TestCaseRepository
         }
     }
 
-    public TestCaseSnapshot LoadSnapshot(string name)
+    public TestCaseSnapshot LoadSnapshot(string name) => LoadSnapshotCore(name, forComparison: false);
+
+    public TestCaseSnapshot LoadSnapshotForComparison(string name) => LoadSnapshotCore(name, forComparison: true);
+
+    private TestCaseSnapshot LoadSnapshotCore(string name, bool forComparison)
     {
         name = SafeId.ValidateTestCaseName(name);
         var readLease = AcquireReadLease(name);
@@ -87,7 +91,10 @@ public sealed class TestCaseRepository
             var manifest = Json.Deserialize<TestCaseManifest>(AtomicFile.ReadAllText(manifestPath));
             if (manifest.Name != name)
                 throw new InvalidDataException("manifest.name 与测试用例目录不一致。");
-            ManifestValidator.Validate(manifest, directory, requireBaselineFiles: true);
+            if (forComparison)
+                ManifestValidator.ValidateForComparison(manifest, directory, requireBaselineFiles: true);
+            else
+                ManifestValidator.Validate(manifest, directory, requireBaselineFiles: true);
             return new TestCaseSnapshot { Directory = directory, Manifest = manifest, ReadLease = readLease };
         }
         catch

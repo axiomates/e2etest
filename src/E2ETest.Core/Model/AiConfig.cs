@@ -11,6 +11,9 @@ public sealed class AiConfig
 
     public string Model { get; set; } = "";
 
+    /// <summary>被测软件、业务语义及允许变化的项目背景；会作为固定审查规则的补充发送给 AI。</summary>
+    public string ContextPrompt { get; set; } = "";
+
     /// <summary>发给模型前图片的最长边；0 表示不缩放。</summary>
     public int MaxImageDimension { get; set; } = 1080;
 
@@ -52,10 +55,4 @@ public sealed class HotkeyConfig
 {
     public string StartStop { get; set; } = "F12";
     public string Screenshot { get; set; } = "F11";
-}
-
-public sealed class ThresholdConfig
-{
-    public double Same { get; set; } = 0.85;
-    public double Uncertain { get; set; } = 0.4;
 }

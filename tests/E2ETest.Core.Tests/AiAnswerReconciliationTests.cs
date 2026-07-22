@@ -64,6 +64,18 @@ public sealed class AiAnswerReconciliationTests
         Assert.Contains("未附图", testCase.Ai.Reason);
     }
 
+    [Fact]
+    public void FailedAiAttemptPropagatesToSubmittedChildren()
+    {
+        var testCase = Case("r1", "r2");
+
+        AiCaseReviewer.MarkAttemptFailed(testCase, ["r1"], "failed", "case_ai_request_failed");
+
+        Assert.Equal("failed", testCase.Shots[0].Ai.Status);
+        Assert.Equal("failed", testCase.Shots[0].Pixel!.Regions[0].Ai.Status);
+        Assert.Equal("not_requested", testCase.Shots[0].Pixel!.Regions[1].Ai.Status);
+    }
+
     private static TestCaseComparisonResult Case(params string[] regionIds)
     {
         var regions = regionIds.Select((id, index) => new PixelRegion

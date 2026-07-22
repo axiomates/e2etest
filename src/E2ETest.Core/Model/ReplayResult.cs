@@ -4,6 +4,7 @@ public sealed class ReplayShotResult
 {
     public int ShotIndex { get; set; }
     public string BaselinePath { get; set; } = "";
+    public string? BaselineSha256 { get; set; }
     public string ReplayPath { get; set; } = "";
     public bool Ok { get; set; }
     public string? Error { get; set; }

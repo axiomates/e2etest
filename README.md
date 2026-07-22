@@ -171,6 +171,7 @@ e2etest config show
     "baseUrl": "",
     "apiKey": "",
     "model": "",
+    "contextPrompt": "",
     "maxImageDimension": 1080,
     "maxEvidenceRegions": 10,
     "maxAttempts": 3,
@@ -344,19 +345,19 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 `run` 先执行 `replay`，再对同一个 round 执行 `compare`；省略 `--round` 时自动生成 roundId，并将该 ID 传给两个阶段。`--name` 只运行一个测试用例，`--ai` 仅在第二阶段启用 AI 复核。回放阶段返回 `2`（无可回放用例）或 `130`（取消）时不会继续对比；其他回放失败仍会继续比较已经产生的截图，以保留诊断报告。最终退出码同时反映回放和对比：任一阶段失败均返回非零。
 
-`compare` 读取已有的 `replays/<roundId>/`，不重新执行输入回放。仍处于 `running` 状态或保留 `.running.lock` 的 round 会被拒绝，避免对尚未完成的回放生成部分报告。报告保留 `replayStatus`、`replayError` 和 `replayLifecycleSucceeded`；包括 `afterRound` 在内的回放生命周期失败会使 compare 返回非零，即使所有截图语义一致也不能覆盖。结果写入 `reports/<roundId>/result.json`；每张截图还会生成 `diff-shot-xxxx.png`（仅显示差异）和 `overlay-shot-xxxx.png`（在 replay 图上以不同半透明颜色标记差异区域）。像素碎片会按带 padding 的相邻上下文自动合并为一个证据区域；每个主要区域再导出 baseline、replay、diff 和 overlay 四张裁剪图，供人工或后续 AI 审查。
+`compare` 读取已有的 `replays/<roundId>/`，不重新执行输入回放。仍处于 `running` 状态或保留 `.running.lock` 的 round 会被拒绝，避免对尚未完成的回放生成部分报告；同一 round 同时只能运行一个 compare。新生成的 replay 会记录每张 baseline 的 SHA-256，若 baseline 在 replay 后被重新录制或改变，compare 会以 `baseline_changed` 硬失败拒绝混用；旧 round 没有哈希时仍可兼容比较。报告保留 `replayStatus`、`replayError` 和 `replayLifecycleSucceeded`；包括 `afterRound` 在内的回放生命周期失败会使 compare 返回非零，即使所有截图语义一致也不能覆盖。完整 round 的结果写入 `reports/<roundId>/result.json`；使用 `--name` 时只更新对应的 `reports/<roundId>/testcases/<name>/result.json`，不会用单例结果覆盖已有整轮汇总。每张截图还会生成 `diff-shot-xxxx.png`（仅显示差异）和 `overlay-shot-xxxx.png`（在 replay 图上以不同半透明颜色标记差异区域）。像素碎片会按带 padding 的相邻上下文自动合并为一个证据区域；每个主要区域再导出 baseline、replay、diff 和 overlay 四张裁剪图，供人工或后续 AI 审查。重跑某个 case 后，目录中由 compare 生成且已不被新 `result.json` 引用的旧证据图会自动删除，其他文件不受影响。
 
-本地比较始终使用原始 PNG 尺寸，不会缩放；两图尺寸不一致直接失败。它以 `pixel.colorTolerance` 过滤抗锯齿等细小渲染噪声，以 `pixel.minRegionPixels` 忽略极小孤立区域，并记录差异区域、差异像素数及比例。`detectedRegionCount` 记录实际检测到的合并区域总数，即使 `regions` 因 `pixel.maxRegions` 只导出其中一部分也不会丢失总数。明显的大区域或高比例差异判为 `failed`；较小但真实的差异判为 `uncertain`，为后续 AI 复核保留证据。`--name` 指定的用例不在该 round 时记为 `skipped`，不会被视为失败。
+本地比较始终使用原始 PNG 尺寸，不会缩放；两图尺寸不一致直接失败。baseline、replay 和 diff 继续使用无损 PNG，不能改用有损 JPG：JPG 压缩本身会制造像素差异，破坏“完全一致”和区域检测的含义。它以 `pixel.colorTolerance` 过滤抗锯齿等细小渲染噪声，以 `pixel.minRegionPixels` 忽略极小孤立区域，并记录差异区域、差异像素数及比例。`detectedRegionCount` 记录实际检测到的合并区域总数，即使 `regions` 因 `pixel.maxRegions` 只导出其中一部分也不会丢失总数。明显的大区域或高比例差异判为 `failed`；较小但真实的差异判为 `uncertain`，为后续 AI 复核保留证据。`--name` 指定的用例不在该 round 时记为 `skipped`，不会被视为失败。
 
 报告以测试用例为单位保留完整截图时间线（`first`、`intermediate`、`last` 与 `atMs`），并将相邻截图中位置接近的差异区域聚合为 `incidents`。每个 incident 有本地关注等级 `P1`、`P2` 或 `P3`，用于优先排序；它不替代通过/失败判定。所有 case、截图和区域均固定包含 `ai.status` 字段；未启用 AI 时为 `not_requested`，像素完全一致或硬失败时为 `skipped`。
 
-添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。一次请求覆盖一个完整 testcase：结构化时间线保留全部步骤；每个存在差异的步骤依次附 baseline 全图、replay 全图，以及该步骤的一个或多个 baseline/replay/diff/overlay 四宫格。每个四宫格均附原始图坐标 `rect` 和包含周边上下文的 `contextRect`，所以 AI 能知道它属于第几步、位于屏幕何处，以及同一步的其他差异区域。
+添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。一次请求覆盖一个完整 testcase：结构化时间线保留全部步骤；每个存在差异的步骤依次附 baseline 全图、replay 全图，以及该步骤的一个或多个 baseline/replay/diff/overlay 四宫格。四宫格会按区域宽高比动态调整整体尺寸，最长边不超过 `maxImageDimension`；四个标题各自位于与画面隔离的标题栏中。prompt 会告诉 AI 标题、边框与留白只是排版，不是产品差异。每个四宫格均附原始图坐标 `rect` 和包含周边上下文的 `contextRect`，所以 AI 能知道它属于第几步、位于屏幕何处，以及同一步的其他差异区域。
 
 本地像素 diff、差异像素计数、区域识别和坐标始终在原始 PNG 尺寸上完成，绝不因 AI 缩放而改变。仅在发送 AI 前，baseline/replay 全图和四宫格才按 `ai.maxImageDimension` 缩放，默认最长边为 1080，保持比例且不放大；设为 `0` 可禁用缩放。`ai.maxEvidenceRegions` 默认每个 testcase 最多附 10 张区域四宫格，按差异像素数从大到小选择、再按流程步骤展示。若超出该上限，报告与 prompt 会明确列出 rect 差异总数、已附图的最大区域和未附图区域，AI 不应据此判定通过。
 
 AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observation` 客观描述看到了什么，再在 `ai.reason` 说明这些观察为何支持 `ai.verdict`，并填入 `finalVerdict`；本地 `status` 和像素证据始终保留。工具会严格验收三级响应：任一步骤或区域失败会使 testcase 失败，任一待确认会使 testcase 至少待确认；缺少已提交步骤/区域的结果，或仍有区域未附图时，不允许从本地失败自动改判为通过。
 
-命令同时输出本地汇总和最终汇总。未启用 AI 时 `finalVerdict` 等于本地 `status`；启用 AI 后退出码以最终汇总为准，`failed` 或 `needs_review` 返回非零。
+命令逐 case 输出“计算像素差异”和“AI 语义复核”进度，同时输出本地汇总和最终汇总。AI 请求期间可按 Ctrl+C 取消；工具会停止重试，保存已完成/取消结果，整轮报告标记 `comparisonCancelled`，并返回退出码 130。未启用 AI 时 `finalVerdict` 等于本地 `status`；启用 AI 后退出码以最终汇总为准，`failed` 或 `needs_review` 返回非零。AI 连接失败会按配置重试；最终仍失败时会在 testcase、已提交步骤及区域的 `ai.status` 中记录失败，而不是留下 `not_requested`。
 
 ### 配置 AI 复核
 
@@ -368,6 +369,7 @@ AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observ
     "baseUrl": "https://api.siliconflow.cn/v1",
     "apiKey": "<你的 SiliconFlow API Key>",
     "model": "Qwen/Qwen3.5-122B-A10B",
+    "contextPrompt": "这是一个 BIM 桌面软件。项目列表数量可随测试数据变化；3D 动态测距允许小幅数值变化。错误弹窗、关键模型或工具状态缺失、流程跳转错误应判为失败。",
     "maxImageDimension": 1080,
     "maxEvidenceRegions": 10,
     "maxAttempts": 3,
@@ -381,7 +383,7 @@ AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observ
 .\e2etest.exe compare --round <roundId> --ai
 ```
 
-`baseUrl` 是 OpenAI 兼容接口的基址（不要加 `/chat/completions`）；`model` 使用服务商给出的模型 ID。`maxImageDimension` 是上传图片的最长边，`0` 表示不缩放；`maxEvidenceRegions` 默认是 `10`，即单个 testcase 最多发送 10 张区域四宫格，按差异像素数从大到小选择。prompt 会同时告知 AI 本 testcase 发现的全部 rect 差异数量、已附的最大区域以及未附图区域的 ID，避免 AI 将前 10 组误认为全部差异。`maxAttempts` 默认 `3`，只对网络连接失败、408、429 和 5xx 重试；`retryDelayMs` 默认 `1000`，按指数退避且单次最多等待 10 秒；`timeoutMs` 是包含重试在内的总超时。基准图、实际图的本地像素比较始终使用原始尺寸，不受这些 AI 传输参数影响。
+`baseUrl` 是 OpenAI 兼容接口的基址（不要加 `/chat/completions`）；`model` 使用服务商给出的模型 ID。`contextPrompt` 是可选的项目背景，可描述被测软件、业务术语、允许的动态变化和必须关注的错误；它作为固定审查规则的补充，因此 e2etest 本身不绑定 BIM 或其他特定软件。不要在其中放 API key 等秘密。`maxImageDimension` 是上传图片和动态四宫格的最长边，`0` 表示全图不缩放；四宫格在 `0` 时仍以 1080 为生成预算，避免无界拼图。`maxEvidenceRegions` 默认是 `10`，即单个 testcase 最多发送 10 张区域四宫格，按差异像素数从大到小选择。prompt 会同时告知 AI 本 testcase 发现的全部 rect 差异数量、已附的最大区域以及未附图区域的 ID，避免 AI 将前 10 组误认为全部差异。`maxAttempts` 默认 `3`，只对网络连接失败、408、429 和 5xx 重试；`retryDelayMs` 默认 `1000`，按指数退避且单次最多等待 10 秒；`timeoutMs` 是包含重试在内的总超时。基准图、实际图的本地像素比较始终使用原始尺寸，不受这些 AI 传输参数影响。
 
 API key 会写入 `config.json`，因此不要提交该文件。若希望密钥完全不落盘，可以将 `baseUrl`、`model` 和 `apiKey` 保持为空，并在运行命令的同一 PowerShell 会话设置环境变量；环境变量只在对应配置项为空时生效：
 

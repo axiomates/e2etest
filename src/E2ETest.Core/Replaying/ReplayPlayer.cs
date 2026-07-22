@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using E2ETest.Core.Capture;
 using E2ETest.Core.Model;
+using E2ETest.Core.Comparing;
 using E2ETest.Core.Storage;
 
 namespace E2ETest.Core.Replaying;
@@ -162,11 +163,13 @@ public sealed class ReplayPlayer
         int height = bitmap.Height;
         try
         {
+            string baselineSha256 = BaselineIdentity.ComputeSha256(baselinePath);
             await Screenshotter.EncodePngAndDisposeAsync(bitmap, replayPath, cancellationToken);
             return new ReplayShotResult
             {
                 ShotIndex = shotIndex,
                 BaselinePath = baselinePath,
+                BaselineSha256 = baselineSha256,
                 ReplayPath = replayPath,
                 Ok = true,
                 Width = width,
