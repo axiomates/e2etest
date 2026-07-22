@@ -178,11 +178,20 @@ e2etest config show
     "apiKey": "",
     "model": "",
     "contextPrompt": "",
+    "enableThinking": null,
     "maxImageDimension": 1080,
     "maxEvidenceRegions": 10,
     "maxAttempts": 3,
     "retryDelayMs": 1000,
     "timeoutMs": 300000
+  },
+  "pixel": {
+    "colorTolerance": 12,
+    "minRegionPixels": 9,
+    "failChangedPixelRatio": 0.01,
+    "failLargestRegionPixels": 2500,
+    "regionPaddingPixels": 32,
+    "maxRegions": 20
   },
   "replayHooks": {
     "beforeRound": null,
@@ -204,6 +213,49 @@ e2etest config show
   }
 }
 ```
+
+### `config.json` 配置字段说明
+
+下表集中列出示例文件中的全部配置。时间均以毫秒为单位；相对路径均相对于数据根目录（`--root`、当前目录中的 `config.json`，或 EXE 目录中回退找到的 `config.json` 所在目录）。
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `schemaVersion` | `1` | 当前配置文件结构的版本标识 |
+| `hotkeys.startStop` | `F12` | 停止录制并保存的全局单键热键 |
+| `hotkeys.screenshot` | `F11` | 录制期间手动截图的全局单键热键 |
+| `record.fullscreen` | `false` | `false` 截取主屏工作区并排除任务栏；`true` 截取完整主屏；可被录制命令参数覆盖 |
+| `replay.betweenTestCasesMs` | `10000` | 同一轮中，上一条 `afterTestCase` 完成到下一条 `beforeTestCase` 开始之间的最短间隔；`0` 表示不等待 |
+| `replay.betweenRoundsMs` | `20000` | 上一轮 `afterRound` 完成到下一轮 `beforeRound` 开始之间的最短间隔；跨 CLI 进程生效，`0` 表示不等待 |
+| `ai.baseUrl` | 空 | OpenAI Chat Completions 兼容服务的 API 基址，例如 `https://api.siliconflow.cn/v1` |
+| `ai.apiKey` | 空 | AI 服务密钥；以明文保存在本机配置中，禁止提交到 Git |
+| `ai.model` | 空 | 服务端模型标识，例如 `Qwen/Qwen3.5-122B-A10B` |
+| `ai.contextPrompt` | 空 | 被测软件、业务含义、允许变化和失败条件等项目背景，会附加到固定审查提示词中 |
+| `ai.enableThinking` | 不发送 | OpenAI 兼容服务的非标准 `enable_thinking` 字段；`true`/`false` 表示显式发送，省略或 `null` 表示不发送 |
+| `ai.maxImageDimension` | `1080` | 发给 AI 前图片的最长边；等比缩放，`0` 表示不缩放；不影响本地原始像素比较 |
+| `ai.maxEvidenceRegions` | `10` | 每个测试用例最多发送的差异区域四宫格数量，按差异像素数从大到小选择 |
+| `ai.maxAttempts` | `3` | 单个测试用例遇到瞬时 AI 请求故障时的最大请求次数 |
+| `ai.retryDelayMs` | `1000` | 第一次 AI 重试前的等待时间；后续指数退避，单次最长 10 秒 |
+| `ai.timeoutMs` | `300000` | 单个测试用例整个 AI 复核过程的总超时，包含所有重试 |
+| `pixel.colorTolerance` | `12` | RGB 任一通道差值不超过该值时视为渲染噪声 |
+| `pixel.minRegionPixels` | `9` | 小于该像素数的差异连通区域视为孤立噪声并忽略 |
+| `pixel.failChangedPixelRatio` | `0.01` | 有效差异像素比例达到该值时，本地直接判定失败；`0.01` 即 1% |
+| `pixel.failLargestRegionPixels` | `2500` | 最大单个差异区域达到该像素数时，本地直接判定失败 |
+| `pixel.regionPaddingPixels` | `32` | 导出区域 baseline/replay/diff/overlay 证据图时向四周扩展的上下文像素 |
+| `pixel.maxRegions` | `20` | 每张截图最多导出的差异区域数量；实际检测总数仍记录在报告中 |
+| `replayHooks.beforeRound` | `null` | 每轮回放开始前运行一次的 Windows shell 命令 |
+| `replayHooks.afterRound` | `null` | 每轮结束后运行一次；失败或取消时也会尽力执行 |
+| `replayHooks.beforeTestCase` | `null` | 每条测试用例回放前运行，适合重置软件和测试数据 |
+| `replayHooks.afterTestCase` | `null` | 每条测试用例结束后运行，适合清理本例资源 |
+| `replayHooks.timeoutMs` | `30000` | 每一条 Hook 命令各自的超时时间 |
+| `paths.testCases` | `./testcases` | 录制基准与测试用例目录 |
+| `paths.replays` | `./replays` | replay 轮次和实际截图目录 |
+| `paths.reports` | `./reports` | compare 结构化报告和证据图目录 |
+| `logging.directory` | `./logs` | CLI 日志目录 |
+| `logging.minimumLevel` | `Information` | 最低日志级别，可用 `Verbose`、`Debug`、`Information`、`Warning`、`Error`、`Fatal`；无效名称回退为 `Information` |
+| `logging.retainedFileCount` | `200` | 最多保留的日志文件数，实际值会限制在 1～200 |
+| `logging.retainedDays` | `30` | 日志最多保留的天数，最小按 1 天处理 |
+
+只有使用 `compare --ai` 或 `run --ai` 时才会请求 AI。`ai.baseUrl`、`ai.apiKey`、`ai.model` 为空时，可以分别由当前进程的 `E2ETEST_AI_BASE_URL`、`E2ETEST_AI_API_KEY`、`E2ETEST_AI_MODEL` 环境变量补充；配置文件中的非空值优先。
 
 控制键只支持单键，例如 `F11`、`F12`、`Pause`、字母或数字；不支持 `Ctrl+F11` 形式的组合控制键。配置的截图键和停止键不会作为普通键盘事件写入时间轴。
 
