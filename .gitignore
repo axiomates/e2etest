@@ -14,6 +14,7 @@ out/
 # 运行时数据（不归入版本控制）
 config.json
 samples/
+/testcases/
 replays/
 reports/
 .locks/
