@@ -347,6 +347,26 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 `run` 和 `compare` 会严格校验参数：未知参数、重复参数、缺少值、给 `--ai` 额外传值或意外位置参数都会直接报错，不会因 `--name` 拼错或缺值而退化成运行全部测试用例。
 
+## 交互式报告查看器
+
+发布目录中的 `e2etest-report-viewer.exe` 是独立、只读的 Windows 报告分析软件，不执行 replay/compare，也不会修改报告。直接启动时会从当前目录或程序上级目录寻找 `reports`；也可以把 reports 根目录、单个 round 目录或某个 `result.json` 作为第一个参数：
+
+```powershell
+.\e2etest-report-viewer.exe C:\public\e2etest\reports
+```
+
+界面按测试人员的阅读顺序组织：
+
+- 顶部先汇总“需要查看、明确失败、已通过、全部用例”；
+- 有风险时默认只列需要关注的 testcase，通过项可切换查看；没有风险时自动显示全部；
+- testcase 按最终结果和 `attentionScore` 排序，默认定位最值得关注的步骤；
+- 步骤按录制时间排列，区域按差异像素数排列；
+- 证据默认显示 AI 实际收到的四宫格，可切换 overlay、baseline、replay 和 diff；
+- AI 的“看到了什么”和“为什么这样判断”与当前步骤/区域放在一起；
+- 单例 `result.json` 会覆盖整轮汇总中的旧副本，因此单独重跑 AI 后查看器能显示最新结论。
+
+查看器定位是“先找风险、再下钻证据”。首版不提供重新执行测试、修改 verdict 或重新请求 AI 的功能。
+
 `compare` 读取已有的 `replays/<roundId>/`，不重新执行输入回放。仍处于 `running` 状态或保留 `.running.lock` 的 round 会被拒绝，避免对尚未完成的回放生成部分报告；同一 round 同时只能运行一个 compare。新生成的 replay 会记录每张 baseline 的 SHA-256，若 baseline 在 replay 后被重新录制或改变，compare 会以 `baseline_changed` 硬失败拒绝混用；旧 round 没有哈希时仍可兼容比较。报告保留 `replayStatus`、`replayError` 和 `replayLifecycleSucceeded`；包括 `afterRound` 在内的回放生命周期失败会使 compare 返回非零，即使所有截图语义一致也不能覆盖。完整 round 的结果写入 `reports/<roundId>/result.json`；使用 `--name` 时只更新对应的 `reports/<roundId>/testcases/<name>/result.json`，不会用单例结果覆盖已有整轮汇总。每张截图还会生成 `diff-shot-xxxx.png`（仅显示差异）和 `overlay-shot-xxxx.png`（在 replay 图上以不同半透明颜色标记差异区域）。像素碎片会按带 padding 的相邻上下文自动合并为一个证据区域；每个主要区域再导出 baseline、replay、diff 和 overlay 四张裁剪图，供人工或后续 AI 审查。重跑某个 case 后，目录中由 compare 生成且已不被新 `result.json` 引用的旧证据图会自动删除，其他文件不受影响。
 
 本地比较始终使用原始 PNG 尺寸，不会缩放；两图尺寸不一致直接失败。baseline、replay 和 diff 继续使用无损 PNG，不能改用有损 JPG：JPG 压缩本身会制造像素差异，破坏“完全一致”和区域检测的含义。它以 `pixel.colorTolerance` 过滤抗锯齿等细小渲染噪声，以 `pixel.minRegionPixels` 忽略极小孤立区域，并记录差异区域、差异像素数及比例。`detectedRegionCount` 记录实际检测到的合并区域总数，即使 `regions` 因 `pixel.maxRegions` 只导出其中一部分也不会丢失总数。明显的大区域或高比例差异判为 `failed`；较小但真实的差异判为 `uncertain`，为后续 AI 复核保留证据。`--name` 指定的用例不在该 round 时记为 `skipped`，不会被视为失败。

@@ -5,14 +5,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$project = Join-Path $root "src\E2ETest.Cli\E2ETest.Cli.csproj"
+$cliProject = Join-Path $root "src\E2ETest.Cli\E2ETest.Cli.csproj"
+$viewerProject = Join-Path $root "src\E2ETest.ReportViewer\E2ETest.ReportViewer.csproj"
 $output = Join-Path $root "publish\$Runtime-single"
+$viewerOutput = Join-Path $root "publish\report-viewer-$Runtime-single"
 
 if (Test-Path $output) {
     Remove-Item $output -Recurse -Force
 }
+if (Test-Path $viewerOutput) {
+    Remove-Item $viewerOutput -Recurse -Force
+}
 
-dotnet publish $project `
+dotnet publish $cliProject `
     -c $Configuration `
     -r $Runtime `
     --self-contained true `
@@ -44,3 +49,21 @@ finally {
 
 Write-Host "发布完成: $exe"
 Write-Host "SHA256: $hash"
+
+dotnet publish $viewerProject `
+    -c $Configuration `
+    -r $Runtime `
+    --self-contained true `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:DebugType=None `
+    -p:DebugSymbols=false `
+    -o $viewerOutput
+
+$viewerExe = Join-Path $viewerOutput "e2etest-report-viewer.exe"
+if (-not (Test-Path $viewerExe)) {
+    throw "发布失败：未生成 $viewerExe"
+}
+$viewerHash = (Get-FileHash -LiteralPath $viewerExe -Algorithm SHA256).Hash
+Write-Host "报告查看器发布完成: $viewerExe"
+Write-Host "报告查看器 SHA256: $viewerHash"

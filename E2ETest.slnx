@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/E2ETest.Cli/E2ETest.Cli.csproj" />
     <Project Path="src/E2ETest.Core/E2ETest.Core.csproj" />
+    <Project Path="src/E2ETest.ReportViewer/E2ETest.ReportViewer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/E2ETest.Core.Tests/E2ETest.Core.Tests.csproj" />
