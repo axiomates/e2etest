@@ -158,7 +158,8 @@ e2etest config show
   "logging": {
     "directory": "./logs",
     "minimumLevel": "Information",
-    "retainedFileCount": 14
+    "retainedFileCount": 200,
+    "retainedDays": 30
   }
 }
 ```
@@ -171,7 +172,7 @@ e2etest config show
 logs\e2etest-YYYYMMDD.log
 ```
 
-正常录制约 4～6 行日志，批量回放约 4 行固定日志加每个测试用例 2 行，通常每天远低于 1 MB。为兼顾异常堆栈和磁盘占用，日志按天或达到 10 MB 时轮转，默认保留 14 个文件，常规情况下约保留 14 天且总量不超过约 140 MB。
+正常录制约 4～6 行日志，批量回放约 4 行固定日志加每个测试用例 2 行，通常每天远低于 1 MB。日志按天或达到 10 MB 时轮转，保留最近 30 天，并最多保留 200 个文件，因此日志预算上限约为 2 GB；如果 30 天内产生超过 200 个分卷，会优先遵守 2 GB 预算并删除最旧文件。
 
 ## 录制命令
 

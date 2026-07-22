@@ -17,7 +17,8 @@ public sealed class LoggingConfig
 {
     public string Directory { get; set; } = "./logs";
     public string MinimumLevel { get; set; } = "Information";
-    public int RetainedFileCount { get; set; } = 14;
+    public int RetainedFileCount { get; set; } = 200;
+    public int RetainedDays { get; set; } = 30;
 }
 
 /// <summary>全局配置，对应 config.json。所有设置明文存盘，内部使用。</summary>

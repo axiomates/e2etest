@@ -27,7 +27,8 @@ public static class LoggingBootstrap
             .WriteTo.File(
                 logPath,
                 rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: Math.Max(1, config.Logging.RetainedFileCount),
+                retainedFileCountLimit: Math.Clamp(config.Logging.RetainedFileCount, 1, 200),
+                retainedFileTimeLimit: TimeSpan.FromDays(Math.Max(1, config.Logging.RetainedDays)),
                 fileSizeLimitBytes: 10 * 1024 * 1024,
                 rollOnFileSizeLimit: true,
                 shared: true,
