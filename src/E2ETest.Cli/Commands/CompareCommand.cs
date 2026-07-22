@@ -75,7 +75,14 @@ public static class CompareCommand
                 foreach (var shot in caseResult.Shots)
                     shot.AtMs = manifest?.Shots.FirstOrDefault(item => item.Index == shot.ShotIndex)?.AtMs;
                 IncidentAggregator.Finalize(caseResult);
-                if (useAi)
+                // 截图即使完整，回放生命周期/hook/播放器本身失败也不能由像素或 AI 判为通过。
+                if (!replayCase.Ok)
+                {
+                    caseResult.Status = caseResult.FinalVerdict = "failed";
+                    caseResult.Error = replayCase.Error ?? $"回放未成功完成（状态: {replayCase.Status}）。";
+                    caseResult.Ai = new AiAssessment { Status = "skipped", Reason = "replay_failure" };
+                }
+                else if (useAi)
                 {
                     if (caseResult.Shots.All(item => item.Ai.Status == "skipped"))
                     {

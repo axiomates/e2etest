@@ -13,6 +13,7 @@ E2ETest 是一个面向 Windows 桌面软件的端到端测试工具。它通过
 - 回放生命周期 hook、超时和批量错误隔离
 - 本地像素对比、差异区域合并和结构化对比报告
 - 可选的 openai-chat 多模态 AI 语义复核
+- `run` 一键串联回放、像素对比与可选 AI 复核
 - 测试用例创建、列出、删除、播放和跨进程读写锁
 - Console + 按天/大小轮转的文件日志
 - Windows x64 自包含单文件发布
@@ -20,7 +21,6 @@ E2ETest 是一个面向 Windows 桌面软件的端到端测试工具。它通过
 尚未实现：
 
 - 独立的可视化 HTML 报告
-- 串联 replay 与 compare 的 `run` 命令
 
 ## 运行前提
 
@@ -112,6 +112,7 @@ CLI 默认使用当前工作目录作为数据根目录，也可以通过 `--roo
 e2etest record
 e2etest replay
 e2etest compare
+e2etest run
 e2etest testcase list
 e2etest testcase delete
 e2etest config init
@@ -157,7 +158,7 @@ e2etest config show
     "apiKey": "",
     "model": "",
     "maxImageDimension": 1080,
-    "maxEvidenceRegions": 24,
+    "maxEvidenceRegions": 10,
     "timeoutMs": 120000
   },
   "replayHooks": {
@@ -319,6 +320,14 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 .\e2etest.exe compare --round <roundId> [--name <测试用例名称>] [--ai] [--root <目录>]
 ```
 
+### 一键执行测试
+
+```powershell
+.\e2etest.exe run [--name <测试用例名称>] [--round <roundId>] [--ai] [--root <目录>]
+```
+
+`run` 先执行 `replay`，再对同一个 round 执行 `compare`；省略 `--round` 时自动生成 roundId，并将该 ID 传给两个阶段。`--name` 只运行一个测试用例，`--ai` 仅在第二阶段启用 AI 复核。回放阶段返回 `2`（无可回放用例）或 `130`（取消）时不会继续对比；其他回放失败仍会继续比较已经产生的截图，以保留诊断报告。最终退出码同时反映回放和对比：任一阶段失败均返回非零。
+
 `compare` 读取已有的 `replays/<roundId>/`，不重新执行输入回放。结果写入 `reports/<roundId>/result.json`；每张截图还会生成 `diff-shot-xxxx.png`（仅显示差异）和 `overlay-shot-xxxx.png`（在 replay 图上以不同半透明颜色标记差异区域）。像素碎片会按带 padding 的相邻上下文自动合并为一个证据区域；每个主要区域再导出 baseline、replay、diff 和 overlay 四张裁剪图，供人工或后续 AI 审查。
 
 本地比较始终使用原始 PNG 尺寸，不会缩放；两图尺寸不一致直接失败。它以 `pixel.colorTolerance` 过滤抗锯齿等细小渲染噪声，以 `pixel.minRegionPixels` 忽略极小孤立区域，并记录差异区域、差异像素数及比例。明显的大区域或高比例差异判为 `failed`；较小但真实的差异判为 `uncertain`，为后续 AI 复核保留证据。`--name` 指定的用例不在该 round 时记为 `skipped`，不会被视为失败。
@@ -327,7 +336,7 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。一次请求覆盖一个完整 testcase：结构化时间线保留全部步骤；每个存在差异的步骤依次附 baseline 全图、replay 全图，以及该步骤的一个或多个 baseline/replay/diff/overlay 四宫格。每个四宫格均附原始图坐标 `rect` 和包含周边上下文的 `contextRect`，所以 AI 能知道它属于第几步、位于屏幕何处，以及同一步的其他差异区域。
 
-本地像素 diff、差异像素计数、区域识别和坐标始终在原始 PNG 尺寸上完成，绝不因 AI 缩放而改变。仅在发送 AI 前，baseline/replay 全图和四宫格才按 `ai.maxImageDimension` 缩放，默认最长边为 1080，保持比例且不放大；设为 `0` 可禁用缩放。`ai.maxEvidenceRegions` 默认每个 testcase 最多附 24 张区域四宫格，按流程步骤、同一步内差异像素数排序。若超出该上限，报告与 prompt 会明确列出未附图区域，AI 不应据此判定通过。
+本地像素 diff、差异像素计数、区域识别和坐标始终在原始 PNG 尺寸上完成，绝不因 AI 缩放而改变。仅在发送 AI 前，baseline/replay 全图和四宫格才按 `ai.maxImageDimension` 缩放，默认最长边为 1080，保持比例且不放大；设为 `0` 可禁用缩放。`ai.maxEvidenceRegions` 默认每个 testcase 最多附 10 张区域四宫格，按差异像素数从大到小选择、再按流程步骤展示。若超出该上限，报告与 prompt 会明确列出 rect 差异总数、已附图的最大区域和未附图区域，AI 不应据此判定通过。
 
 AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observation` 客观描述看到了什么，再在 `ai.reason` 说明这些观察为何支持 `ai.verdict`，并填入 `finalVerdict`；本地 `status` 和像素证据始终保留。
 
@@ -344,7 +353,7 @@ AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observ
     "apiKey": "<你的 SiliconFlow API Key>",
     "model": "Qwen/Qwen3.5-122B-A10B",
     "maxImageDimension": 1080,
-    "maxEvidenceRegions": 24,
+    "maxEvidenceRegions": 10,
     "timeoutMs": 120000
   }
 }
@@ -354,7 +363,7 @@ AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observ
 .\e2etest.exe compare --round <roundId> --ai
 ```
 
-`baseUrl` 是 OpenAI 兼容接口的基址（不要加 `/chat/completions`）；`model` 使用服务商给出的模型 ID。`maxImageDimension` 是上传图片的最长边，`0` 表示不缩放；`maxEvidenceRegions` 是单个 testcase 最多发送的区域四宫格数量。基准图、实际图的本地像素比较始终使用原始尺寸，不受这两个 AI 传输参数影响。
+`baseUrl` 是 OpenAI 兼容接口的基址（不要加 `/chat/completions`）；`model` 使用服务商给出的模型 ID。`maxImageDimension` 是上传图片的最长边，`0` 表示不缩放；`maxEvidenceRegions` 默认是 `10`，即单个 testcase 最多发送 10 张区域四宫格，按差异像素数从大到小选择。prompt 会同时告知 AI 本 testcase 发现的全部 rect 差异数量、已附的最大区域以及未附图区域的 ID，避免 AI 将前 10 组误认为全部差异。基准图、实际图的本地像素比较始终使用原始尺寸，不受这两个 AI 传输参数影响。
 
 API key 会写入 `config.json`，因此不要提交该文件。若希望密钥完全不落盘，可以将 `baseUrl`、`model` 和 `apiKey` 保持为空，并在运行命令的同一 PowerShell 会话设置环境变量；环境变量只在对应配置项为空时生效：
 

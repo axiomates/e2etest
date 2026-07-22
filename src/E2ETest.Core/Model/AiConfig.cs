@@ -14,8 +14,8 @@ public sealed class AiConfig
     /// <summary>发给模型前图片的最长边；0 表示不缩放。</summary>
     public int MaxImageDimension { get; set; } = 1080;
 
-    /// <summary>每个 case 最多附带的区域四宫格数，按步骤顺序、同一步内差异像素数降序选择。</summary>
-    public int MaxEvidenceRegions { get; set; } = 24;
+    /// <summary>每个 case 最多附带的区域四宫格数，按差异像素数从大到小选择。</summary>
+    public int MaxEvidenceRegions { get; set; } = 10;
 
     public int TimeoutMs { get; set; } = 120000;
 }

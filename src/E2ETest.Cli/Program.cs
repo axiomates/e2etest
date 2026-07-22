@@ -23,6 +23,7 @@ try
         "record" => RecordCommand.Run(rest),
         "replay" => ReplayCommand.Run(rest),
         "compare" => CompareCommand.Run(rest),
+        "run" => RunCommand.Run(rest),
         "testcase" => TestCaseCommand.Run(rest),
         "config" => ConfigCommand.Run(rest),
         "help" or "-h" or "--help" => Help(),
@@ -65,6 +66,9 @@ static void PrintUsage()
 
       e2etest compare --round <id> [--name <名称>] [--ai] [--root <dir>]
           对已有回放轮次执行本地像素对比
+
+      e2etest run [--name <名称>] [--round <id>] [--ai] [--root <dir>]
+          新建一轮回放后立即对同一轮执行 compare；--ai 启用 AI 复核
 
       e2etest testcase list [--root <dir>]
           列出测试用例

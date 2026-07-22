@@ -11,6 +11,8 @@ public static class ReplayCommand
 {
     public static int Run(CliArgs args) => RunAsync(args).GetAwaiter().GetResult();
 
+    internal static string CreateRoundId() => $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}"[..35];
+
     private static async Task<int> RunAsync(CliArgs args)
     {
         if (args.Has("sample"))
@@ -19,7 +21,7 @@ public static class ReplayCommand
         string root = args.Get("root") ?? ".";
         string? requestedName = args.Get("name");
         string roundId = SafeId.Validate(
-            args.Get("round") ?? $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}"[..35],
+            args.Get("round") ?? CreateRoundId(),
             "round");
         using var roundLogContext = LogContext.PushProperty("RoundId", roundId);
         var repo = new TestCaseRepository(root);
