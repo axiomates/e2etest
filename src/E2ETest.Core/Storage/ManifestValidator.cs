@@ -6,7 +6,7 @@ namespace E2ETest.Core.Storage;
 /// <summary>集中验证 manifest 的时间轴、截图映射、路径和截图尺寸不变量。</summary>
 public static class ManifestValidator
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public static void Validate(TestCaseManifest manifest, string testCaseDir, bool requireBaselineFiles)
     {
@@ -19,9 +19,8 @@ public static class ManifestValidator
         if (manifest.DurationMs < 0) throw new InvalidDataException("durationMs 不能为负数。");
         if (!double.IsFinite(manifest.Replay.SpeedFactor) || manifest.Replay.SpeedFactor <= 0)
             throw new InvalidDataException("replay.speedFactor 必须大于 0。");
-        if (manifest.Replay.MaxIdleGapMs < 0 || manifest.Replay.ResetWaitMs < 0 ||
-            manifest.Replay.ResetTimeoutMs <= 0)
-            throw new InvalidDataException("replay 等待/超时配置无效。");
+        if (manifest.Replay.MaxIdleGapMs < 0)
+            throw new InvalidDataException("replay.maxIdleGapMs 不能为负数。");
 
         var screen = manifest.Capture.Screen;
         var crop = manifest.Capture.CropRect;
@@ -60,7 +59,7 @@ public static class ManifestValidator
                 throw new InvalidDataException("键盘 VK 或扫描码超出有效范围。");
         }
 
-        if (manifest.Shots.Count == 0) throw new InvalidDataException("样例至少需要一张结尾图。");
+        if (manifest.Shots.Count == 0) throw new InvalidDataException("测试用例至少需要一张手动截图。");
         var shotsByIndex = new Dictionary<int, ShotEntry>();
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string baselineRoot = Path.GetFullPath(Path.Combine(testCaseDir, "baseline"))
@@ -70,8 +69,8 @@ public static class ManifestValidator
         {
             if (shot.Index <= 0 || !shotsByIndex.TryAdd(shot.Index, shot))
                 throw new InvalidDataException($"截图 index 无效或重复: {shot.Index}");
-            if (shot.Kind is not ("manual" or "final"))
-                throw new InvalidDataException($"未知截图类型: {shot.Kind}");
+            if (shot.Kind != "manual")
+                throw new InvalidDataException($"截图必须由录制时手动触发: {shot.Index}");
             if (shot.AtMs < 0 || shot.AtMs > manifest.DurationMs)
                 throw new InvalidDataException($"截图时间超出录制范围: {shot.Index}");
             if (shot.RequestedAtMs is < 0 || shot.RequestedAtMs > shot.AtMs)
@@ -94,12 +93,8 @@ public static class ManifestValidator
         if (!Enumerable.Range(1, manifest.Shots.Count).All(shotsByIndex.ContainsKey))
             throw new InvalidDataException("截图 index 必须从 1 开始连续递增。");
 
-        var finalShots = manifest.Shots.Where(s => s.Kind == "final").ToList();
-        if (finalShots.Count != 1 || finalShots[0].AtMs != manifest.DurationMs)
-            throw new InvalidDataException("必须有且仅有一张位于 durationMs 的结尾图。");
-
         var screenshotEvents = manifest.Events.OfType<ScreenshotEvent>().ToList();
-        foreach (var manual in manifest.Shots.Where(s => s.Kind == "manual"))
+        foreach (var manual in manifest.Shots)
         {
             var matches = screenshotEvents.Where(e => e.ShotIndex == manual.Index).ToList();
             if (matches.Count != 1 || matches[0].T != manual.AtMs)

@@ -75,7 +75,13 @@ public sealed class ManifestTests : IDisposable
     public void RejectsDuplicateShotIndex()
     {
         var manifest = CreateValidManifest();
-        manifest.Shots[1].Index = manifest.Shots[0].Index;
+        manifest.Shots.Add(new ShotEntry
+        {
+            Index = manifest.Shots[0].Index,
+            File = "baseline/shot-0002.png",
+            AtMs = 10,
+            Kind = "manual",
+        });
         Assert.Throws<InvalidDataException>(() =>
             ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
     }
@@ -99,6 +105,25 @@ public sealed class ManifestTests : IDisposable
     }
 
     [Fact]
+    public void RejectsManifestWithoutManualScreenshots()
+    {
+        var manifest = CreateValidManifest();
+        manifest.Shots.Clear();
+        manifest.Events.Clear();
+        Assert.Throws<InvalidDataException>(() =>
+            ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
+    }
+
+    [Fact]
+    public void RejectsAutomaticFinalScreenshot()
+    {
+        var manifest = CreateValidManifest();
+        manifest.Shots[0].Kind = "final";
+        Assert.Throws<InvalidDataException>(() =>
+            ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
+    }
+
+    [Fact]
     public void StrictTimelineIsDefault()
     {
         Assert.Equal(0, new ReplaySettings().MaxIdleGapMs);
@@ -109,7 +134,6 @@ public sealed class ManifestTests : IDisposable
         string baseline = Path.Combine(_testCaseDir, "baseline");
         Directory.CreateDirectory(baseline);
         SavePng(Path.Combine(baseline, "shot-0001.png"));
-        SavePng(Path.Combine(baseline, "shot-0002.png"));
 
         return new TestCaseManifest
         {
@@ -130,7 +154,6 @@ public sealed class ManifestTests : IDisposable
             Shots = new List<ShotEntry>
             {
                 new() { Index = 1, File = "baseline/shot-0001.png", AtMs = 10, Kind = "manual" },
-                new() { Index = 2, File = "baseline/shot-0002.png", AtMs = 20, Kind = "final" },
             },
         };
     }

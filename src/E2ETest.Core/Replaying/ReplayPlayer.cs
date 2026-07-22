@@ -86,12 +86,6 @@ public sealed class ReplayPlayer
                 previousT = inputEvent.T;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            var finalShot = manifest.Shots.Single(s => s.Kind == "final");
-            long finalGap = manifest.DurationMs - previousT;
-            scheduledMs += Math.Min(maxIdleGap, finalGap / speed);
-            await WaitUntilAsync(clock, scheduledMs, cancellationToken);
-            captureTasks.Add(CaptureShotAsync(manifest, testCaseDir, finalShot.Index, replayTestCaseDir, cancellationToken));
         }
         catch (Exception ex)
         {

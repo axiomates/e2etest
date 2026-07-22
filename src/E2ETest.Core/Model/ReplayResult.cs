@@ -31,6 +31,7 @@ public sealed class ReplayRoundResult
     public string Status { get; set; } = "running";
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset FinishedAt { get; set; }
+    public string? Error { get; set; }
     public int TotalTestCases { get; set; }
     public int SucceededTestCases { get; set; }
     public int FailedTestCases { get; set; }

@@ -3,15 +3,16 @@ using Serilog;
 
 namespace E2ETest.Core.Replaying;
 
-public sealed class ResetProcessTerminationException : Exception
+public sealed class HookProcessTerminationException : Exception
 {
-    public ResetProcessTerminationException(string message, Exception? inner = null) : base(message, inner) { }
+    public HookProcessTerminationException(string message, Exception? inner = null) : base(message, inner) { }
 }
 
-/// <summary>执行样例级 resetCommand；整个等待和终止流程均有界。</summary>
-public static class ResetCommandRunner
+/// <summary>执行回放生命周期 hook；整个等待和终止流程均有界。</summary>
+public static class HookCommandRunner
 {
     public static async Task RunAsync(
+        string hookName,
         string? command,
         int timeoutMs,
         CancellationToken cancellationToken = default)
@@ -30,9 +31,9 @@ public static class ResetCommandRunner
             RedirectStandardError = false,
         };
 
-        Log.Information("执行 resetCommand TimeoutMs={TimeoutMs} Command={ResetCommand}", timeoutMs, command);
+        Log.Information("执行回放 Hook={HookName} TimeoutMs={TimeoutMs} Command={Command}", hookName, timeoutMs, command);
         using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("无法启动 resetCommand");
+            ?? throw new InvalidOperationException($"无法启动 {hookName} hook");
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeoutMs);
 
@@ -46,13 +47,13 @@ public static class ResetCommandRunner
 
             Task exitTask = process.WaitForExitAsync(CancellationToken.None);
             if (await Task.WhenAny(exitTask, Task.Delay(2000, CancellationToken.None)) != exitTask)
-                throw new ResetProcessTerminationException(
-                    "resetCommand 超时后进程树仍未退出，为避免污染后续样例，必须终止本轮回放。", killError);
+                throw new HookProcessTerminationException(
+                    $"{hookName} hook 超时后进程树仍未退出，为避免污染后续用例，必须终止本轮回放。", killError);
             await exitTask;
             throw new TimeoutException(
                 killError is null
-                    ? $"resetCommand 超过 {timeoutMs}ms，进程树已终止。"
-                    : $"resetCommand 超过 {timeoutMs}ms；终止请求报错但进程已退出: {killError.Message}",
+                    ? $"{hookName} hook 超过 {timeoutMs}ms，进程树已终止。"
+                    : $"{hookName} hook 超过 {timeoutMs}ms；终止请求报错但进程已退出: {killError.Message}",
                 killError);
         }
         catch (OperationCanceledException)
@@ -60,14 +61,14 @@ public static class ResetCommandRunner
             Exception? killError = await TryTerminateProcessTreeAsync(process);
             Task exitTask = process.WaitForExitAsync(CancellationToken.None);
             if (await Task.WhenAny(exitTask, Task.Delay(2000, CancellationToken.None)) != exitTask)
-                throw new ResetProcessTerminationException(
-                    "取消回放后 resetCommand 进程树仍未退出。", killError);
+                throw new HookProcessTerminationException(
+                    $"取消回放后 {hookName} hook 进程树仍未退出。", killError);
             await exitTask;
             throw;
         }
 
         if (process.ExitCode != 0)
-            throw new InvalidOperationException($"resetCommand 失败，退出码 {process.ExitCode}");
+            throw new InvalidOperationException($"{hookName} hook 失败，退出码 {process.ExitCode}");
     }
 
     private static async Task<Exception?> TryTerminateProcessTreeAsync(Process process)

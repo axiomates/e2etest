@@ -24,6 +24,9 @@ public static class ReplayCommand
         using var roundLogContext = LogContext.PushProperty("RoundId", roundId);
         var repo = new TestCaseRepository(root);
         var config = ConfigStore.Load(repo.ConfigPath);
+        var hooks = config.ReplayHooks ?? new ReplayHooksConfig();
+        if (hooks.TimeoutMs <= 0)
+            throw new InvalidDataException("replayHooks.timeoutMs 必须大于 0。");
         using var desktopLock = repo.AcquireDesktopLock();
 
         var names = requestedName is not null
@@ -68,56 +71,91 @@ public static class ReplayCommand
         Console.WriteLine($"开始回放 {names.Count} 条测试用例，轮次: {roundId}");
         Console.WriteLine("回放期间控制台将隐藏，避免进入截图。");
         var consoleState = ConsoleWindow.CaptureAndHide();
+        bool roundHookFailed = false;
         try
         {
-            for (int index = 0; index < names.Count; index++)
+            try
             {
-                string name = names[index];
-                using var caseLogContext = LogContext.PushProperty("TestCaseName", name);
-                Log.Information("开始回放测试用例");
-                TestCaseReplayResult result;
-                try
-                {
-                    result = await ReplayOneAsync(repo, name, testCasesOutputRoot, cancellation.Token);
-                }
-                catch (ResetProcessTerminationException ex)
-                {
-                    cancellation.Cancel();
-                    result = FailedResult(name, ex);
-                }
-                catch (Exception ex)
-                {
-                    result = FailedResult(name, ex);
-                }
+                await HookCommandRunner.RunAsync("beforeRound", hooks.BeforeRound, hooks.TimeoutMs, cancellation.Token);
+            }
+            catch (Exception ex)
+            {
+                roundHookFailed = true;
+                round.Error = $"beforeRound: {ex}";
+                Log.Error(ex, "beforeRound hook 失败");
+            }
 
-                try { PersistResult(testCasesOutputRoot, result); }
-                catch (Exception persistError)
+            if (!roundHookFailed)
+            {
+                for (int index = 0; index < names.Count; index++)
                 {
-                    result.Ok = false;
-                    result.Status = "failed";
-                    result.Error = $"{result.Error}{Environment.NewLine}result-write: {persistError}";
-                }
-                AddResult(round, result);
-                AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
-                if (!cancellation.IsCancellationRequested) continue;
+                    string name = names[index];
+                    using var caseLogContext = LogContext.PushProperty("TestCaseName", name);
+                    Log.Information("开始回放测试用例");
+                    TestCaseReplayResult result;
+                    try
+                    {
+                        result = await ReplayOneAsync(repo, name, testCasesOutputRoot, hooks, cancellation.Token);
+                    }
+                    catch (HookProcessTerminationException ex)
+                    {
+                        cancellation.Cancel();
+                        result = FailedResult(name, ex);
+                    }
+                    catch (Exception ex)
+                    {
+                        result = FailedResult(name, ex);
+                    }
 
-                for (int remaining = index + 1; remaining < names.Count; remaining++)
+                    try { PersistResult(testCasesOutputRoot, result); }
+                    catch (Exception persistError)
+                    {
+                        result.Ok = false;
+                        result.Status = "failed";
+                        result.Error = $"{result.Error}{Environment.NewLine}result-write: {persistError}";
+                    }
+                    AddResult(round, result);
+                    AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
+                    if (!cancellation.IsCancellationRequested) continue;
+
+                    for (int remaining = index + 1; remaining < names.Count; remaining++)
+                    {
+                        var cancelled = CancelledResult(names[remaining]);
+                        PersistResult(testCasesOutputRoot, cancelled);
+                        AddResult(round, cancelled);
+                    }
+                    AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
+                    break;
+                }
+            }
+            else
+            {
+                foreach (string name in names)
                 {
-                    var cancelled = CancelledResult(names[remaining]);
-                    PersistResult(testCasesOutputRoot, cancelled);
-                    AddResult(round, cancelled);
+                    var failed = FailedResult(name, new InvalidOperationException("beforeRound hook 失败，测试用例未执行。"));
+                    PersistResult(testCasesOutputRoot, failed);
+                    AddResult(round, failed);
                 }
                 AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
-                break;
             }
         }
         finally
         {
             try
             {
+                try
+                {
+                    await HookCommandRunner.RunAsync("afterRound", hooks.AfterRound, hooks.TimeoutMs, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    roundHookFailed = true;
+                    round.Error = AppendError(round.Error, $"afterRound: {ex}");
+                    Log.Error(ex, "afterRound hook 失败");
+                }
                 ConsoleWindow.Restore(consoleState);
                 round.FinishedAt = DateTimeOffset.UtcNow;
-                round.Status = cancellation.IsCancellationRequested ? "cancelled" : "completed";
+                round.Status = cancellation.IsCancellationRequested ? "cancelled" : roundHookFailed ? "failed" : "completed";
                 AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
             }
             finally
@@ -137,13 +175,14 @@ public static class ReplayCommand
         Console.WriteLine($"回放完成: 成功 {round.SucceededTestCases}, 失败 {round.FailedTestCases}, " +
                           $"取消 {round.CancelledTestCases}, 目录 {roundDir}");
         if (cancellation.IsCancellationRequested) return 130;
-        return round.FailedTestCases == 0 ? 0 : 1;
+        return round.FailedTestCases == 0 && !roundHookFailed ? 0 : 1;
     }
 
     private static async Task<TestCaseReplayResult> ReplayOneAsync(
         TestCaseRepository repo,
         string name,
         string testCasesOutputRoot,
+        ReplayHooksConfig hooks,
         CancellationToken cancellationToken)
     {
         var result = new TestCaseReplayResult
@@ -160,15 +199,7 @@ public static class ReplayCommand
             using var snapshot = repo.LoadSnapshot(name);
             var manifest = snapshot.Manifest;
 
-            if (!string.IsNullOrWhiteSpace(manifest.Replay.ResetCommand))
-            {
-                await ResetCommandRunner.RunAsync(
-                    manifest.Replay.ResetCommand,
-                    manifest.Replay.ResetTimeoutMs,
-                    cancellationToken);
-                if (manifest.Replay.ResetWaitMs > 0)
-                    await Task.Delay(manifest.Replay.ResetWaitMs, cancellationToken);
-            }
+            await HookCommandRunner.RunAsync("beforeTestCase", hooks.BeforeTestCase, hooks.TimeoutMs, cancellationToken);
 
             var playback = await new ReplayPlayer().PlayAsync(
                 manifest, snapshot.Directory, outputDir, cancellationToken);
@@ -189,7 +220,7 @@ public static class ReplayCommand
                 if (result.Error.Length == 0) result.Error = "回放截图数量不完整。";
             }
         }
-        catch (ResetProcessTerminationException)
+        catch (HookProcessTerminationException)
         {
             throw;
         }
@@ -205,6 +236,20 @@ public static class ReplayCommand
         }
         finally
         {
+            try
+            {
+                await HookCommandRunner.RunAsync("afterTestCase", hooks.AfterTestCase, hooks.TimeoutMs, CancellationToken.None);
+            }
+            catch (HookProcessTerminationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                result.Ok = false;
+                result.Status = "failed";
+                result.Error = AppendError(result.Error, $"afterTestCase: {ex}");
+            }
             result.FinishedAt = DateTimeOffset.UtcNow;
         }
 
@@ -265,4 +310,7 @@ public static class ReplayCommand
         StartedAt = DateTimeOffset.UtcNow,
         FinishedAt = DateTimeOffset.UtcNow,
     };
+
+    private static string AppendError(string? existing, string next) =>
+        string.IsNullOrWhiteSpace(existing) ? next : $"{existing}{Environment.NewLine}{next}";
 }

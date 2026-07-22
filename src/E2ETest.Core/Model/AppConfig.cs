@@ -21,6 +21,16 @@ public sealed class LoggingConfig
     public int RetainedDays { get; set; } = 30;
 }
 
+/// <summary>回放生命周期 hook；所有命令均可省略。</summary>
+public sealed class ReplayHooksConfig
+{
+    public string? BeforeRound { get; set; }
+    public string? AfterRound { get; set; }
+    public string? BeforeTestCase { get; set; }
+    public string? AfterTestCase { get; set; }
+    public int TimeoutMs { get; set; } = 30000;
+}
+
 /// <summary>全局配置，对应 config.json。所有设置明文存盘，内部使用。</summary>
 public sealed class AppConfig
 {
@@ -31,5 +41,6 @@ public sealed class AppConfig
     public ThresholdConfig Thresholds { get; set; } = new();
     public PathsConfig Paths { get; set; } = new();
     public RecordConfig Record { get; set; } = new();
+    public ReplayHooksConfig ReplayHooks { get; set; } = new();
     public LoggingConfig Logging { get; set; } = new();
 }

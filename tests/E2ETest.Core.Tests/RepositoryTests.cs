@@ -135,9 +135,13 @@ public sealed class RepositoryTests : IDisposable
                 CropRect = new Rect { X = 0, Y = 0, Width = 10, Height = 10 },
             },
             Replay = new ReplaySettings(),
+            Events = new List<InputEvent>
+            {
+                new ScreenshotEvent { T = 0, ShotIndex = 1 },
+            },
             Shots = new List<ShotEntry>
             {
-                new() { Index = 1, File = "baseline/shot-0001.png", AtMs = 0, Kind = "final" },
+                new() { Index = 1, File = "baseline/shot-0001.png", AtMs = 0, Kind = "manual" },
             },
         };
     }

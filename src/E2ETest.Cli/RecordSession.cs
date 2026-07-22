@@ -139,11 +139,6 @@ public sealed class RecordSession : ApplicationContext
         _recorder.MarkStopRequested(atMs);
         long lastEventMs = _recorder.Events.Count == 0 ? 0 : _recorder.Events.Max(e => e.T);
         long finalAtMs = Math.Max(Math.Max(atMs, _recorder.ElapsedMs), lastEventMs);
-        if (Failure is null)
-        {
-            try { finalAtMs = CaptureFinalShot(finalAtMs); }
-            catch (Exception ex) { Failure = ex; }
-        }
 
         TrySetTrayText($"E2E 正在保存: {_name}");
         TryNotify("录制已停止", Failure is null ? "正在保存截图和测试记录…" : "录制发生错误，正在安全清理…",
@@ -152,17 +147,6 @@ public sealed class RecordSession : ApplicationContext
         try { _recorder.Stop(); }
         catch (Exception ex) { Failure = Combine(Failure, ex); }
         _finishTask = FinishRecordingAsync(finalAtMs);
-    }
-
-    private long CaptureFinalShot(long requestedAtMs)
-    {
-        var bitmap = Screenshotter.CaptureBitmap(_capture);
-        long capturedAtMs = Math.Max(requestedAtMs, _recorder.ElapsedMs);
-        int index = ++_shotCounter;
-        string file = Path.Combine("baseline", $"shot-{index:D4}.png");
-        _shots.Add(new ShotEntry { Index = index, File = file, AtMs = capturedAtMs, Kind = "final" });
-        QueueEncoding(bitmap, file);
-        return capturedAtMs;
     }
 
     private void QueueEncoding(Bitmap bitmap, string relativeFile)
@@ -196,6 +180,8 @@ public sealed class RecordSession : ApplicationContext
 
             if (Failure is null)
             {
+                if (_shots.Count == 0)
+                    throw new InvalidOperationException("录制无效：未捕获任何截图。请在停止前按截图键后重新录制。");
                 var manifest = BuildManifest(duration);
                 ManifestValidator.Validate(manifest, _staging.DirectoryPath, requireBaselineFiles: true);
                 _repo.SaveStagedManifest(_staging, manifest);

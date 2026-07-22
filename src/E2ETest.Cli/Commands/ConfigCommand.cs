@@ -33,6 +33,7 @@ public static class ConfigCommand
         Console.WriteLine("  hotkeys.screenshot  (默认 F11)");
         Console.WriteLine("  hotkeys.startStop   (默认 F12)");
         Console.WriteLine("  record.fullscreen   (默认 false)");
+        Console.WriteLine("  replayHooks.*       回放生命周期 hook（默认均不执行）");
         return 0;
     }
 
