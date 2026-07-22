@@ -17,7 +17,7 @@ public sealed class AiConfig
     /// <summary>每个 case 最多附带的区域四宫格数，按差异像素数从大到小选择。</summary>
     public int MaxEvidenceRegions { get; set; } = 10;
 
-    public int TimeoutMs { get; set; } = 120000;
+    public int TimeoutMs { get; set; } = 300000;
 }
 
 public sealed class PixelConfig

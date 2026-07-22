@@ -159,7 +159,7 @@ e2etest config show
     "model": "",
     "maxImageDimension": 1080,
     "maxEvidenceRegions": 10,
-    "timeoutMs": 120000
+    "timeoutMs": 300000
   },
   "replayHooks": {
     "beforeRound": null,
@@ -354,7 +354,7 @@ AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observ
     "model": "Qwen/Qwen3.5-122B-A10B",
     "maxImageDimension": 1080,
     "maxEvidenceRegions": 10,
-    "timeoutMs": 120000
+    "timeoutMs": 300000
   }
 }
 ```
