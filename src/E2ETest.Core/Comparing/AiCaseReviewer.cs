@@ -12,7 +12,8 @@ public sealed class AiCaseReviewer
 {
     private const string Instructions = """
 你是 Windows 桌面软件端到端测试审查员。baseline 是录制时的预期截图序列，replay 是本次实际截图序列。
-必须结合整个时间线判断，不要孤立判断单张图。像素不同本身不是失败：文件名、文件数量、日期时间、运行时数据，以及 3D 动态测距数值可能变化。只有错误提示、异常窗口、关键界面状态缺失、流程明显跑偏或业务语义明显不一致才判 failed。
+第一张图是完整时间线：每行对应同一时刻，左侧是 baseline（期望），右侧是 replay（实际）；行标签给出截图在流程中的顺序、角色和时点。第二张图是一个局部 incident 的四宫格：左上 baseline、右上 replay、左下 diff（仅差异像素）、右下 overlay（实际图上的差异位置）。
+随附元数据中的 rect 与 contextRect 使用原始完整截图像素坐标，左上角为 (0,0)；contextRect 是含周边上下文的裁剪范围。必须结合完整时间线、区域位置和局部四宫格判断，不要孤立判断单张图。像素不同本身不是失败：文件名、文件数量、日期时间、运行时数据，以及 3D 动态测距数值可能变化。只有错误提示、异常窗口、关键界面状态缺失、流程明显跑偏或业务语义明显不一致才判 failed。
 只返回 JSON：{"verdict":"passed|failed|needs_review","confidence":0到1,"reason":"中文简述","incidents":[{"id":"incident-001","verdict":"passed|failed|needs_review","reason":"中文说明"}]}。不要 Markdown。
 """;
 
@@ -49,7 +50,21 @@ public sealed class AiCaseReviewer
             new { type = "text", text = Instructions + "\n本次只审查一个 incident。第一张图是完整时间线缩略图，第二张图是该 incident 的四宫格局部证据。\n" + StorageJson.Serialize(new
             {
                 testCase = testCase.Name, testCase.TotalShots, testCase.DurationMs,
-                incident = new { incident.Id, incident.LocalVerdict, incident.AttentionScore, incident.AttentionReasons, incident.ShotIndexes, incident.RegionIds },
+                incident = new
+                {
+                    incident.Id, incident.LocalVerdict, incident.AttentionScore, incident.AttentionReasons, incident.ShotIndexes, incident.RegionIds,
+                    regions = RegionsFor(testCase, incident).Select(region => new
+                    {
+                        region.Id,
+                        shotIndex = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).ShotIndex,
+                        ordinal = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Ordinal,
+                        role = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Role,
+                        originalImage = new { width = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Pixel!.Width, height = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Pixel!.Height },
+                        rect = new { region.X, region.Y, region.Width, region.Height },
+                        contextRect = new { x = region.ContextX, y = region.ContextY, width = region.ContextWidth, height = region.ContextHeight },
+                        region.ChangedPixels,
+                    }),
+                },
             }) },
             ImagePart(timelinePath, config.MaxImageDimension),
             ImagePart(evidencePath, config.MaxImageDimension),
@@ -95,12 +110,14 @@ public sealed class AiCaseReviewer
     private static void CreateTimeline(TestCaseComparisonResult testCase, string path, int maxDimension)
     {
         const int imageWidth = 280, imageHeight = 166, labelHeight = 22, margin = 10;
-        using var sheet = new Bitmap(imageWidth * 2 + margin * 3, testCase.Shots.Count * (imageHeight + labelHeight + margin) + margin);
+        const int header = 20;
+        using var sheet = new Bitmap(imageWidth * 2 + margin * 3, testCase.Shots.Count * (imageHeight + labelHeight + margin) + margin + header);
         using var graphics = Graphics.FromImage(sheet);
         graphics.Clear(Color.White); using var font = new Font(SystemFonts.DefaultFont.FontFamily, 9);
+        graphics.DrawString("LEFT: baseline (expected)                                      RIGHT: replay (actual)", font, Brushes.Black, margin, margin);
         foreach (var shot in testCase.Shots)
         {
-            int y = margin + (shot.Ordinal - 1) * (imageHeight + labelHeight + margin);
+            int y = margin + header + (shot.Ordinal - 1) * (imageHeight + labelHeight + margin);
             graphics.DrawString($"{shot.Ordinal}/{testCase.TotalShots} {shot.Role} {shot.AtMs ?? 0}ms {shot.Status}", font, Brushes.Black, margin, y);
             DrawThumb(graphics, shot.BaselinePath, new Rectangle(margin, y + labelHeight, imageWidth, imageHeight));
             DrawThumb(graphics, shot.ReplayPath, new Rectangle(margin * 2 + imageWidth, y + labelHeight, imageWidth, imageHeight));
