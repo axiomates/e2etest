@@ -35,6 +35,7 @@ public static class ReportArtifactCleaner
                 if (region.ReplayCropPath is not null) yield return region.ReplayCropPath;
                 if (region.DiffCropPath is not null) yield return region.DiffCropPath;
                 if (region.OverlayCropPath is not null) yield return region.OverlayCropPath;
+                if (region.AiEvidencePath is not null) yield return region.AiEvidencePath;
             }
         }
     }

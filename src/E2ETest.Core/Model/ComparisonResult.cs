@@ -16,6 +16,8 @@ public sealed class PixelRegion
     public string? ReplayCropPath { get; set; }
     public string? DiffCropPath { get; set; }
     public string? OverlayCropPath { get; set; }
+    /// <summary>启用 AI 时实际发送的四宫格证据图；同时保留供调试审计。</summary>
+    public string? AiEvidencePath { get; set; }
     public AiAssessment Ai { get; set; } = new();
 }
 

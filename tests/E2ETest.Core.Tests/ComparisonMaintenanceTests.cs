@@ -40,20 +40,32 @@ public sealed class ComparisonMaintenanceTests : IDisposable
     {
         Directory.CreateDirectory(_dir);
         string keep = Path.Combine(_dir, "diff-shot-0001.png");
+        string keepEvidence = Path.Combine(_dir, "ai-shot-0001-region-001.png");
         string stale = Path.Combine(_dir, "diff-shot-9999.png");
-        string aiTemporary = Path.Combine(_dir, "ai-shot-0001-region-001.png");
+        string staleEvidence = Path.Combine(_dir, "ai-shot-9999-region-001.png");
         string unrelated = Path.Combine(_dir, "note.png");
-        foreach (string path in new[] { keep, stale, aiTemporary, unrelated }) File.WriteAllText(path, "x");
+        foreach (string path in new[] { keep, keepEvidence, stale, staleEvidence, unrelated }) File.WriteAllText(path, "x");
         var result = new TestCaseComparisonResult
         {
-            Shots = new List<ShotComparisonResult> { new() { DiffPath = keep } },
+            Shots = new List<ShotComparisonResult>
+            {
+                new()
+                {
+                    DiffPath = keep,
+                    Pixel = new PixelComparisonResult
+                    {
+                        Regions = new List<PixelRegion> { new() { AiEvidencePath = keepEvidence } },
+                    },
+                },
+            },
         };
 
         ReportArtifactCleaner.Clean(_dir, result);
 
         Assert.True(File.Exists(keep));
+        Assert.True(File.Exists(keepEvidence));
         Assert.False(File.Exists(stale));
-        Assert.False(File.Exists(aiTemporary));
+        Assert.False(File.Exists(staleEvidence));
         Assert.True(File.Exists(unrelated));
     }
 
