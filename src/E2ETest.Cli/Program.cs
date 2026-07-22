@@ -13,7 +13,7 @@ if (args.Length == 0)
 
 string command = args[0].ToLowerInvariant();
 var rest = CliArgs.Parse(args[1..]);
-LoggingBootstrap.Configure(rest.Get("root") ?? ".");
+LoggingBootstrap.Configure(DataRootResolver.Resolve(rest.Get("root")));
 
 try
 {

@@ -8,7 +8,7 @@ public static class ConfigCommand
 {
     public static int Run(CliArgs args)
     {
-        string root = args.Get("root") ?? ".";
+        string root = DataRootResolver.Resolve(args.Get("root"));
         var repo = new TestCaseRepository(root);
 
         string sub = args.Positional(0) ?? "show";

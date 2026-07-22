@@ -13,7 +13,7 @@ public static class RecordCommand
     {
         string name = SafeId.ValidateTestCaseName(args.Get("name") ?? GenerateName());
         using var logContext = LogContext.PushProperty("TestCaseName", name);
-        string root = args.Get("root") ?? ".";
+        string root = DataRootResolver.Resolve(args.Get("root"));
         var repo = new TestCaseRepository(root);
         var config = ConfigStore.Load(repo.ConfigPath);
         using var desktopLock = repo.AcquireDesktopLock();

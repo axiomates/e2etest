@@ -6,7 +6,7 @@ public static class TestCaseCommand
 {
     public static int Run(CliArgs args)
     {
-        var repo = new TestCaseRepository(args.Get("root") ?? ".");
+        var repo = new TestCaseRepository(DataRootResolver.Resolve(args.Get("root")));
         return args.Positional(0)?.ToLowerInvariant() switch
         {
             "list" => List(repo),

@@ -24,7 +24,7 @@ public static class CompareCommand
         string? requestedName = args.Get("name");
         if (requestedName is not null) requestedName = SafeId.ValidateTestCaseName(requestedName);
 
-        var repo = new TestCaseRepository(args.Get("root") ?? ".");
+        var repo = new TestCaseRepository(DataRootResolver.Resolve(args.Get("root")));
         var config = ConfigStore.Load(repo.ConfigPath);
         bool useAi = args.Has("ai");
         if (useAi)

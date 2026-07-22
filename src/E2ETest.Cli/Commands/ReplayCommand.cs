@@ -18,7 +18,7 @@ public static class ReplayCommand
         if (args.Has("sample"))
             throw new ArgumentException("--sample 已改为 --name。");
 
-        string root = args.Get("root") ?? ".";
+        string root = DataRootResolver.Resolve(args.Get("root"));
         string? requestedName = args.Get("name");
         string roundId = SafeId.Validate(
             args.Get("round") ?? CreateRoundId(),

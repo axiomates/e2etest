@@ -8,13 +8,9 @@ $root = $PSScriptRoot
 $cliProject = Join-Path $root "src\E2ETest.Cli\E2ETest.Cli.csproj"
 $viewerProject = Join-Path $root "src\E2ETest.ReportViewer\E2ETest.ReportViewer.csproj"
 $output = Join-Path $root "publish\$Runtime-single"
-$viewerOutput = Join-Path $root "publish\report-viewer-$Runtime-single"
 
 if (Test-Path $output) {
     Remove-Item $output -Recurse -Force
-}
-if (Test-Path $viewerOutput) {
-    Remove-Item $viewerOutput -Recurse -Force
 }
 
 dotnet publish $cliProject `
@@ -58,9 +54,9 @@ dotnet publish $viewerProject `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:DebugType=None `
     -p:DebugSymbols=false `
-    -o $viewerOutput
+    -o $output
 
-$viewerExe = Join-Path $viewerOutput "e2etest-report-viewer.exe"
+$viewerExe = Join-Path $output "e2etest-report-viewer.exe"
 if (-not (Test-Path $viewerExe)) {
     throw "发布失败：未生成 $viewerExe"
 }

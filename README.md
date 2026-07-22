@@ -66,10 +66,12 @@ src\E2ETest.Cli\bin\Release\net10.0-windows\e2etest.exe
 默认输出：
 
 ```text
-publish\win-x64-single\e2etest.exe
+publish\win-x64-single\
+  e2etest.exe
+  e2etest-report-viewer.exe
 ```
 
-该 EXE 是 Windows x64 自包含单文件，目标机器无需安装 .NET。也可以手动发布：
+两个 EXE 会发布到同一个目录，可以连同 `config.json` 和数据目录一起复制部署；它们都是 Windows x64 自包含单文件，目标机器无需安装 .NET。也可以手动发布 CLI：
 
 ```powershell
 dotnet publish src\E2ETest.Cli\E2ETest.Cli.csproj `
@@ -85,7 +87,7 @@ dotnet publish src\E2ETest.Cli\E2ETest.Cli.csproj `
 
 ## 数据根目录
 
-CLI 默认使用当前工作目录作为数据根目录，也可以通过 `--root <目录>` 指定。目录结构如下：
+CLI 可以通过 `--root <目录>` 明确指定数据根目录。未指定时，先查找当前工作目录中的 `config.json`；如果不存在，再查找 `e2etest.exe` 所在目录中的 `config.json`。两处都不存在时继续使用当前工作目录，以兼容首次执行 `config init`。发现的 `config.json` 所在目录就是数据根目录。目录结构如下：
 
 ```text
 <root>/                                      # 数据根目录
@@ -137,7 +139,7 @@ e2etest config show
 
 | 参数 | 说明 |
 | --- | --- |
-| `--root <目录>` | 指定配置、测试用例、回放和日志的数据根目录；默认当前工作目录 |
+| `--root <目录>` | 指定配置、测试用例、回放和日志的数据根目录；省略时依次检查当前工作目录和 EXE 目录中的 `config.json` |
 
 ## 配置命令
 
@@ -349,7 +351,7 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 ## 交互式报告查看器
 
-发布目录中的 `e2etest-report-viewer.exe` 是独立、只读的 Windows 报告分析软件，不执行 replay/compare，也不会修改报告。直接启动时会从当前目录或程序上级目录寻找 `reports`；也可以把 reports 根目录、单个 round 目录或某个 `result.json` 作为第一个参数：
+与 `e2etest.exe` 位于同一发布目录的 `e2etest-report-viewer.exe` 是独立、只读的 Windows 报告分析软件，不执行 replay/compare，不修改报告，也不读取 `config.json`。直接启动时会从当前目录或程序上级目录寻找 `reports`；也可以把 reports 根目录、单个 round 目录或某个 `result.json` 作为第一个参数：
 
 ```powershell
 .\e2etest-report-viewer.exe C:\public\e2etest\reports
