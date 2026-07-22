@@ -12,8 +12,8 @@ public sealed class AiCaseReviewer
 {
     private const string Instructions = """
 你是 Windows 桌面软件端到端测试审查员。baseline 是录制时的预期截图序列，replay 是本次实际截图序列。
-第一张图是完整时间线：每行对应同一时刻，左侧是 baseline（期望），右侧是 replay（实际）；行标签给出截图在流程中的顺序、角色和时点。第二张图是一个局部 incident 的四宫格：左上 baseline、右上 replay、左下 diff（仅差异像素）、右下 overlay（实际图上的差异位置）。
-随附元数据中的 rect 与 contextRect 使用原始完整截图像素坐标，左上角为 (0,0)；contextRect 是含周边上下文的裁剪范围。必须结合完整时间线、区域位置和局部四宫格判断，不要孤立判断单张图。像素不同本身不是失败：文件名、文件数量、日期时间、运行时数据，以及 3D 动态测距数值可能变化。只有错误提示、异常窗口、关键界面状态缺失、流程明显跑偏或业务语义明显不一致才判 failed。
+你会收到三张图：第一张是当前步骤的 baseline 全图（期望），第二张是同一步骤的 replay 全图（实际），第三张是当前 incident 的四宫格局部证据：左上 baseline、右上 replay、左下 diff（仅差异像素）、右下 overlay（实际图上的差异位置）。完整测试流程按时间顺序以结构化元数据提供。
+随附元数据中的 rect 与 contextRect 使用原始完整截图像素坐标，左上角为 (0,0)；contextRect 是含周边上下文的裁剪范围。必须结合完整流程顺序、当前全图、区域位置和局部四宫格判断，不要孤立判断差异像素。像素不同本身不是失败：文件名、文件数量、日期时间、运行时数据，以及 3D 动态测距数值可能变化。只有错误提示、异常窗口、关键界面状态缺失、流程明显跑偏或业务语义明显不一致才判 failed。
 只返回 JSON：{"verdict":"passed|failed|needs_review","confidence":0到1,"reason":"中文简述","incidents":[{"id":"incident-001","verdict":"passed|failed|needs_review","reason":"中文说明"}]}。不要 Markdown。
 """;
 
@@ -30,11 +30,12 @@ public sealed class AiCaseReviewer
             .ToList();
         foreach (var incident in incidents)
         {
-            PixelRegion? region = RegionsFor(testCase, incident).OrderByDescending(item => item.ChangedPixels).FirstOrDefault();
-            if (region is null) continue;
+            var source = testCase.Shots.SelectMany(shot => (shot.Pixel?.Regions ?? []).Select(region => new { Shot = shot, Region = region }))
+                .Where(item => incident.RegionIds.Contains(item.Region.Id)).OrderByDescending(item => item.Region.ChangedPixels).FirstOrDefault();
+            if (source is null) continue;
             string evidencePath = Path.Combine(outputDir, $"ai-{incident.Id}.png");
-            CreateEvidenceSheet(region, evidencePath);
-            await ReviewIncidentAsync(testCase, incident, timelinePath, evidencePath, config, cancellationToken);
+            CreateEvidenceSheet(source.Region, evidencePath);
+            await ReviewIncidentAsync(testCase, incident, source.Shot, evidencePath, config, cancellationToken);
         }
         var reviewed = incidents.Where(incident => incident.Ai.Status == "completed").ToList();
         string verdict = reviewed.Any(incident => incident.Ai.Verdict == "failed") ? "failed" :
@@ -43,13 +44,14 @@ public sealed class AiCaseReviewer
         testCase.FinalVerdict = verdict;
     }
 
-    private static async Task ReviewIncidentAsync(TestCaseComparisonResult testCase, ComparisonIncident incident, string timelinePath, string evidencePath, AiConfig config, CancellationToken cancellationToken)
+    private static async Task ReviewIncidentAsync(TestCaseComparisonResult testCase, ComparisonIncident incident, ShotComparisonResult sourceShot, string evidencePath, AiConfig config, CancellationToken cancellationToken)
     {
         var content = new List<object>
         {
-            new { type = "text", text = Instructions + "\n本次只审查一个 incident。第一张图是完整时间线缩略图，第二张图是该 incident 的四宫格局部证据。\n" + StorageJson.Serialize(new
+            new { type = "text", text = Instructions + "\n本次只审查一个 incident；当前步骤为第 " + sourceShot.Ordinal + "/" + testCase.TotalShots + " 张。\n" + StorageJson.Serialize(new
             {
                 testCase = testCase.Name, testCase.TotalShots, testCase.DurationMs,
+                timeline = testCase.Shots.Select(shot => new { shot.ShotIndex, shot.Ordinal, shot.Role, shot.AtMs, localVerdict = shot.Status, changedPixels = shot.Pixel?.ChangedPixels }),
                 incident = new
                 {
                     incident.Id, incident.LocalVerdict, incident.AttentionScore, incident.AttentionReasons, incident.ShotIndexes, incident.RegionIds,
@@ -66,7 +68,8 @@ public sealed class AiCaseReviewer
                     }),
                 },
             }) },
-            ImagePart(timelinePath, config.MaxImageDimension),
+            ImagePart(sourceShot.BaselinePath, config.MaxImageDimension),
+            ImagePart(sourceShot.ReplayPath, config.MaxImageDimension),
             ImagePart(evidencePath, config.MaxImageDimension),
         };
         var body = new { model = config.Model, temperature = 0.1, max_tokens = 800, enable_thinking = false, messages = new[] { new { role = "user", content = (object)content } } };
