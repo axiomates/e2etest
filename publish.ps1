@@ -27,6 +27,20 @@ if (-not (Test-Path $exe)) {
     throw "发布失败：未生成 $exe"
 }
 
-$hash = Get-FileHash $exe -Algorithm SHA256
+$stream = [System.IO.File]::OpenRead($exe)
+try {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash($stream)
+        $hash = ([System.BitConverter]::ToString($hashBytes)).Replace("-", "")
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+finally {
+    $stream.Dispose()
+}
+
 Write-Host "发布完成: $exe"
-Write-Host "SHA256: $($hash.Hash)"
+Write-Host "SHA256: $hash"
