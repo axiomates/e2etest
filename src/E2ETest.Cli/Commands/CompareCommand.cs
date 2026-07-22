@@ -16,6 +16,13 @@ public static class CompareCommand
 
         var repo = new TestCaseRepository(args.Get("root") ?? ".");
         var config = ConfigStore.Load(repo.ConfigPath);
+        bool useAi = args.Has("ai");
+        if (useAi)
+        {
+            if (string.IsNullOrWhiteSpace(config.Ai.ApiKey)) config.Ai.ApiKey = Environment.GetEnvironmentVariable("E2ETEST_AI_API_KEY") ?? "";
+            if (string.IsNullOrWhiteSpace(config.Ai.BaseUrl)) config.Ai.BaseUrl = Environment.GetEnvironmentVariable("E2ETEST_AI_BASE_URL") ?? "";
+            if (string.IsNullOrWhiteSpace(config.Ai.Model)) config.Ai.Model = Environment.GetEnvironmentVariable("E2ETEST_AI_MODEL") ?? "";
+        }
         string replaysRoot = Path.GetFullPath(Path.Combine(repo.Root, config.Paths.Replays));
         string roundDir = SafeId.ResolveChild(replaysRoot, roundId, "round");
         string replayResultPath = Path.Combine(roundDir, "result.json");
@@ -68,6 +75,18 @@ public static class CompareCommand
                 foreach (var shot in caseResult.Shots)
                     shot.AtMs = manifest?.Shots.FirstOrDefault(item => item.Index == shot.ShotIndex)?.AtMs;
                 IncidentAggregator.Finalize(caseResult);
+                if (useAi)
+                {
+                    if (caseResult.Shots.All(item => item.Ai.Status == "skipped"))
+                    {
+                        caseResult.Ai = new AiAssessment { Status = "skipped", Reason = "all_shots_skipped" };
+                    }
+                    else
+                    {
+                        try { new AiCaseReviewer().ReviewAsync(caseResult, caseOutputDir, config.Ai).GetAwaiter().GetResult(); }
+                        catch (Exception ex) { caseResult.Ai = new AiAssessment { Status = "failed", Reason = ex.Message }; }
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -84,10 +103,14 @@ public static class CompareCommand
         report.FailedTestCases = report.TestCases.Count(item => item.Status == "failed");
         report.UncertainTestCases = report.TestCases.Count(item => item.Status == "uncertain");
         report.SkippedTestCases = report.TestCases.Count(item => item.Status == "skipped");
+        report.FinalPassedTestCases = report.TestCases.Count(item => item.FinalVerdict == "passed");
+        report.FinalFailedTestCases = report.TestCases.Count(item => item.FinalVerdict == "failed");
+        report.FinalNeedsReviewTestCases = report.TestCases.Count(item => item.FinalVerdict is "uncertain" or "needs_review");
         report.FinishedAt = DateTimeOffset.UtcNow;
         AtomicFile.WriteAllText(Path.Combine(reportDir, "result.json"), Json.Serialize(report));
-        Console.WriteLine($"对比完成: 通过 {report.PassedTestCases}, 失败 {report.FailedTestCases}, 待确认 {report.UncertainTestCases}, 跳过 {report.SkippedTestCases}, 目录 {reportDir}");
-        return report.FailedTestCases == 0 && report.UncertainTestCases == 0 ? 0 : 1;
+        Console.WriteLine($"对比完成: 本地通过 {report.PassedTestCases}, 本地失败 {report.FailedTestCases}, 本地待确认 {report.UncertainTestCases}; " +
+                          $"最终通过 {report.FinalPassedTestCases}, 最终失败 {report.FinalFailedTestCases}, 最终待确认 {report.FinalNeedsReviewTestCases}, 跳过 {report.SkippedTestCases}, 目录 {reportDir}");
+        return report.FinalFailedTestCases == 0 && report.FinalNeedsReviewTestCases == 0 ? 0 : 1;
     }
 
     private static TestCaseManifest? TryLoadManifest(string testCaseDir)

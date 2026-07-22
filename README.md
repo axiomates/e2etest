@@ -305,7 +305,7 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 ## 本地像素对比
 
 ```powershell
-.\e2etest.exe compare --round <roundId> [--name <测试用例名称>] [--root <目录>]
+.\e2etest.exe compare --round <roundId> [--name <测试用例名称>] [--ai] [--root <目录>]
 ```
 
 `compare` 读取已有的 `replays/<roundId>/`，不重新执行输入回放。结果写入 `reports/<roundId>/result.json`；每张截图还会生成 `diff-shot-xxxx.png`（仅显示差异）和 `overlay-shot-xxxx.png`（在 replay 图上以不同半透明颜色标记差异区域）。像素碎片会按带 padding 的相邻上下文自动合并为一个证据区域；每个主要区域再导出 baseline、replay、diff 和 overlay 四张裁剪图，供人工或后续 AI 审查。
@@ -313,6 +313,10 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 本地比较始终使用原始 PNG 尺寸，不会缩放；两图尺寸不一致直接失败。它以 `pixel.colorTolerance` 过滤抗锯齿等细小渲染噪声，以 `pixel.minRegionPixels` 忽略极小孤立区域，并记录差异区域、差异像素数及比例。明显的大区域或高比例差异判为 `failed`；较小但真实的差异判为 `uncertain`，为后续 AI 复核保留证据。`--name` 指定的用例不在该 round 时记为 `skipped`，不会被视为失败。
 
 报告以测试用例为单位保留完整截图时间线（`first`、`intermediate`、`last` 与 `atMs`），并将相邻截图中位置接近的差异区域聚合为 `incidents`。每个 incident 有本地关注等级 `P1`、`P2` 或 `P3`，用于优先排序；它不替代通过/失败判定。所有 case、截图和区域均固定包含 `ai.status` 字段；未启用 AI 时为 `not_requested`，像素完全一致或硬失败时为 `skipped`。
+
+添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。请求按 incident 分开：每次只发送一张受尺寸上限约束的时间线缩略图和一张 baseline/replay/diff/overlay 四宫格证据图，不会将整轮截图一次性放入模型上下文。AI 结论填入既有 `ai` 字段与 `finalVerdict`，本地 `status` 和像素证据始终保留。
+
+命令同时输出本地汇总和最终汇总。未启用 AI 时 `finalVerdict` 等于本地 `status`；启用 AI 后退出码以最终汇总为准，`failed` 或 `needs_review` 返回非零。
 
 默认阈值可在 `config.json` 的 `pixel` 中调整：
 

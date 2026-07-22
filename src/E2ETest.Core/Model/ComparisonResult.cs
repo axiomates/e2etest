@@ -61,6 +61,7 @@ public sealed class TestCaseComparisonResult
     public List<ComparisonIncident> Incidents { get; set; } = new();
     public int AttentionScore { get; set; }
     public string AttentionLevel { get; set; } = "P3";
+    public string? AiTimelinePath { get; set; }
     public AiAssessment Ai { get; set; } = new();
 }
 
@@ -96,5 +97,8 @@ public sealed class ComparisonRoundResult
     public int FailedTestCases { get; set; }
     public int UncertainTestCases { get; set; }
     public int SkippedTestCases { get; set; }
+    public int FinalPassedTestCases { get; set; }
+    public int FinalFailedTestCases { get; set; }
+    public int FinalNeedsReviewTestCases { get; set; }
     public List<TestCaseComparisonResult> TestCases { get; set; } = new();
 }

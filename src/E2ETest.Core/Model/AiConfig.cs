@@ -11,8 +11,13 @@ public sealed class AiConfig
 
     public string Model { get; set; } = "";
 
-    /// <summary>发给模型前的图片缩放系数(0,1]，保持宽高比。</summary>
-    public double ImageScaleFactor { get; set; } = 0.5;
+    /// <summary>发给模型前图片的最长边；0 表示不缩放。</summary>
+    public int MaxImageDimension { get; set; } = 768;
+
+    /// <summary>每个 case 最多提交给模型的 incident 数量。</summary>
+    public int MaxEvidenceIncidents { get; set; } = 4;
+
+    public int TimeoutMs { get; set; } = 120000;
 }
 
 public sealed class PixelConfig
