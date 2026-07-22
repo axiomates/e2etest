@@ -70,6 +70,8 @@ public sealed class AiAssessment
     public string Status { get; set; } = "not_requested";
     public string? Verdict { get; set; }
     public double? Confidence { get; set; }
+    /// <summary>AI 对可见界面的客观描述，先于结论输出。</summary>
+    public string? Observation { get; set; }
     public string? Reason { get; set; }
 }
 

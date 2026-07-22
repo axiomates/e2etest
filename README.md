@@ -329,7 +329,7 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 本地像素 diff、差异像素计数、区域识别和坐标始终在原始 PNG 尺寸上完成，绝不因 AI 缩放而改变。仅在发送 AI 前，baseline/replay 全图和四宫格才按 `ai.maxImageDimension` 缩放，默认最长边为 1080，保持比例且不放大；设为 `0` 可禁用缩放。`ai.maxEvidenceRegions` 默认每个 testcase 最多附 24 张区域四宫格，按流程步骤、同一步内差异像素数排序。若超出该上限，报告与 prompt 会明确列出未附图区域，AI 不应据此判定通过。
 
-AI 同时返回 testcase、步骤和区域三级结论，填入既有 `ai` 字段与 `finalVerdict`；本地 `status` 和像素证据始终保留。
+AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observation` 客观描述看到了什么，再在 `ai.reason` 说明这些观察为何支持 `ai.verdict`，并填入 `finalVerdict`；本地 `status` 和像素证据始终保留。
 
 命令同时输出本地汇总和最终汇总。未启用 AI 时 `finalVerdict` 等于本地 `status`；启用 AI 后退出码以最终汇总为准，`failed` 或 `needs_review` 返回非零。
 
