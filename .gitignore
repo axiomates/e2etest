@@ -1,0 +1,26 @@
+# .NET 构建产物
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+# 发布输出
+publish/
+out/
+
+# 运行时数据（不归入版本控制）
+config.json
+samples/
+replays/
+reports/
+
+# 日志
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

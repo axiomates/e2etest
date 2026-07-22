@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/E2ETest.Cli/E2ETest.Cli.csproj" />
+    <Project Path="src/E2ETest.Core/E2ETest.Core.csproj" />
+  </Folder>
+</Solution>
