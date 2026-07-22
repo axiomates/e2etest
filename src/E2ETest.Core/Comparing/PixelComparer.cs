@@ -28,6 +28,7 @@ public sealed class PixelComparer
         ComparePixels(baseline, replay, settings.ColorTolerance, changed, diffs);
         List<PixelRegion> regions = FindRegions(changed, width, height, settings.MinRegionPixels, out bool[] retained);
         regions = MergeEvidenceRegions(regions, width, height, settings.RegionPaddingPixels);
+        int detectedRegionCount = regions.Count;
         int changedPixels = retained.Count(value => value);
         bool exactPixelMatch = diffs.All(value => value == 0);
         int largest = regions.Count == 0 ? 0 : regions.Max(region => region.ChangedPixels);
@@ -57,7 +58,8 @@ public sealed class PixelComparer
             {
                 Width = width, Height = height, ColorTolerance = settings.ColorTolerance,
                 ChangedPixels = changedPixels, ExactPixelMatch = exactPixelMatch, ChangedRatio = Math.Round(changedPixels / (double)length, 6),
-                LargestRegionPixels = largest, Regions = regions.OrderByDescending(region => region.ChangedPixels).Take(settings.MaxRegions).ToList(),
+                LargestRegionPixels = largest, DetectedRegionCount = detectedRegionCount,
+                Regions = regions.OrderByDescending(region => region.ChangedPixels).Take(settings.MaxRegions).ToList(),
             },
         };
     }

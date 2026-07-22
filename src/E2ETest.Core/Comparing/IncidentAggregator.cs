@@ -5,7 +5,7 @@ namespace E2ETest.Core.Comparing;
 
 public static class IncidentAggregator
 {
-    public static void Finalize(TestCaseComparisonResult testCase)
+    public static void Finalize(TestCaseComparisonResult testCase, PixelConfig? settings = null)
     {
         testCase.TotalShots = testCase.Shots.Count;
         for (int index = 0; index < testCase.Shots.Count; index++)
@@ -34,7 +34,8 @@ public static class IncidentAggregator
             item.Incident.ShotIndexes = item.Members.Select(member => member.Shot).Distinct().Order().ToList();
             item.Incident.RegionIds = item.Members.Select(member => member.Region.Id).ToList();
             item.Incident.ChangedPixels = item.Members.Sum(member => member.Region.ChangedPixels);
-            item.Incident.LocalVerdict = item.Members.Any(member => member.Region.ChangedPixels >= 2500) ? "failed" : "uncertain";
+            int failLargestRegionPixels = settings?.FailLargestRegionPixels ?? 2500;
+            item.Incident.LocalVerdict = item.Members.Any(member => member.Region.ChangedPixels >= failLargestRegionPixels) ? "failed" : "uncertain";
             item.Incident.FinalVerdict = item.Incident.LocalVerdict;
             int score = item.Incident.LocalVerdict == "failed" ? 55 : 30;
             if (item.Incident.ShotIndexes.Count > 1) { score += Math.Min(20, 10 * (item.Incident.ShotIndexes.Count - 1)); item.Incident.AttentionReasons.Add("跨多张截图持续出现"); }

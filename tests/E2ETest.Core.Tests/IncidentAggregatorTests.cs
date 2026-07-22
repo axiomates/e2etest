@@ -28,6 +28,22 @@ public sealed class IncidentAggregatorTests
         Assert.Equal("not_requested", testCase.Ai.Status);
     }
 
+    [Fact]
+    public void IncidentVerdictUsesConfiguredLargestRegionThreshold()
+    {
+        var testCase = new TestCaseComparisonResult
+        {
+            Shots = new List<ShotComparisonResult>
+            {
+                Shot(1, "uncertain", new PixelRegion { Id = "r1", Width = 20, Height = 20, ChangedPixels = 150 }),
+            },
+        };
+
+        IncidentAggregator.Finalize(testCase, new PixelConfig { FailLargestRegionPixels = 100 });
+
+        Assert.Equal("failed", Assert.Single(testCase.Incidents).LocalVerdict);
+    }
+
     private static ShotComparisonResult Shot(int index, string status, PixelRegion region) => new()
     {
         ShotIndex = index,

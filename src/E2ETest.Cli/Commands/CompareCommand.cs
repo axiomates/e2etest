@@ -28,11 +28,19 @@ public static class CompareCommand
         string replayResultPath = Path.Combine(roundDir, "result.json");
         if (!File.Exists(replayResultPath)) throw new DirectoryNotFoundException($"回放轮次不存在: {roundId}");
         var replayRound = Json.Deserialize<ReplayRoundResult>(AtomicFile.ReadAllText(replayResultPath));
+        ComparisonRoundGuard.EnsureReady(roundDir, replayRound);
 
         string reportsRoot = Path.GetFullPath(Path.Combine(repo.Root, config.Paths.Reports));
         string reportDir = SafeId.ResolveChild(reportsRoot, roundId, "round");
         Directory.CreateDirectory(reportDir);
-        var report = new ComparisonRoundResult { RoundId = roundId, StartedAt = DateTimeOffset.UtcNow };
+        var report = new ComparisonRoundResult
+        {
+            RoundId = roundId,
+            ReplayStatus = replayRound.Status,
+            ReplayError = replayRound.Error,
+            ReplayLifecycleSucceeded = string.Equals(replayRound.Status, "completed", StringComparison.OrdinalIgnoreCase),
+            StartedAt = DateTimeOffset.UtcNow,
+        };
         IEnumerable<TestCaseReplayResult> candidates = requestedName is null
             ? replayRound.TestCases
             : replayRound.TestCases.Where(item => item.Name == requestedName);
@@ -74,13 +82,18 @@ public static class CompareCommand
                 }
                 foreach (var shot in caseResult.Shots)
                     shot.AtMs = manifest?.Shots.FirstOrDefault(item => item.Index == shot.ShotIndex)?.AtMs;
-                IncidentAggregator.Finalize(caseResult);
+                IncidentAggregator.Finalize(caseResult, config.Pixel);
                 // 截图即使完整，回放生命周期/hook/播放器本身失败也不能由像素或 AI 判为通过。
                 if (!replayCase.Ok)
                 {
                     caseResult.Status = caseResult.FinalVerdict = "failed";
                     caseResult.Error = replayCase.Error ?? $"回放未成功完成（状态: {replayCase.Status}）。";
                     caseResult.Ai = new AiAssessment { Status = "skipped", Reason = "replay_failure" };
+                }
+                else if (caseResult.Shots.Any(item => item.HardFailureCode is not null))
+                {
+                    caseResult.FinalVerdict = "failed";
+                    caseResult.Ai = new AiAssessment { Status = "skipped", Reason = "hard_failure" };
                 }
                 else if (useAi)
                 {
@@ -116,8 +129,9 @@ public static class CompareCommand
         report.FinishedAt = DateTimeOffset.UtcNow;
         AtomicFile.WriteAllText(Path.Combine(reportDir, "result.json"), Json.Serialize(report));
         Console.WriteLine($"对比完成: 本地通过 {report.PassedTestCases}, 本地失败 {report.FailedTestCases}, 本地待确认 {report.UncertainTestCases}; " +
-                          $"最终通过 {report.FinalPassedTestCases}, 最终失败 {report.FinalFailedTestCases}, 最终待确认 {report.FinalNeedsReviewTestCases}, 跳过 {report.SkippedTestCases}, 目录 {reportDir}");
-        return report.FinalFailedTestCases == 0 && report.FinalNeedsReviewTestCases == 0 ? 0 : 1;
+                          $"最终通过 {report.FinalPassedTestCases}, 最终失败 {report.FinalFailedTestCases}, 最终待确认 {report.FinalNeedsReviewTestCases}, " +
+                          $"回放生命周期 {(report.ReplayLifecycleSucceeded ? "成功" : "失败")}, 跳过 {report.SkippedTestCases}, 目录 {reportDir}");
+        return report.ReplayLifecycleSucceeded && report.FinalFailedTestCases == 0 && report.FinalNeedsReviewTestCases == 0 ? 0 : 1;
     }
 
     private static TestCaseManifest? TryLoadManifest(string testCaseDir)

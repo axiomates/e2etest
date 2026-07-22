@@ -62,6 +62,26 @@ public sealed class PixelComparerTests : IDisposable
         Assert.Equal(36, result.Pixel.Regions[0].ChangedPixels);
     }
 
+    [Fact]
+    public void ReportsDetectedRegionCountBeforeExportLimit()
+    {
+        string baseline = CreateImage("baseline.png", Color.White);
+        string replay = CreateImage("replay.png", Color.White, graphics =>
+        {
+            graphics.FillRectangle(Brushes.Black, 1, 1, 1, 1);
+            graphics.FillRectangle(Brushes.Black, 5, 1, 1, 1);
+            graphics.FillRectangle(Brushes.Black, 9, 1, 1, 1);
+        });
+        var result = new PixelComparer().Compare(baseline, replay, _dir, 1, new PixelConfig
+        {
+            MinRegionPixels = 1, RegionPaddingPixels = 0, MaxRegions = 2,
+            FailLargestRegionPixels = 100, FailChangedPixelRatio = 1,
+        });
+
+        Assert.Equal(3, result.Pixel!.DetectedRegionCount);
+        Assert.Equal(2, result.Pixel.Regions.Count);
+    }
+
     private string CreateImage(string name, Color color, Action<Graphics>? draw = null)
     {
         Directory.CreateDirectory(_dir);

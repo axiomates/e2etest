@@ -28,6 +28,8 @@ public sealed class PixelComparisonResult
     public bool ExactPixelMatch { get; set; }
     public double ChangedRatio { get; set; }
     public int LargestRegionPixels { get; set; }
+    /// <summary>合并后实际检测到的区域总数，可能大于 Regions 中导出的数量。</summary>
+    public int DetectedRegionCount { get; set; }
     public List<PixelRegion> Regions { get; set; } = new();
 }
 
@@ -93,6 +95,9 @@ public sealed class ComparisonRoundResult
 {
     public int SchemaVersion { get; set; } = 2;
     public string RoundId { get; set; } = "";
+    public string ReplayStatus { get; set; } = "unknown";
+    public string? ReplayError { get; set; }
+    public bool ReplayLifecycleSucceeded { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset FinishedAt { get; set; }
     public int PassedTestCases { get; set; }
