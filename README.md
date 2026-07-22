@@ -312,6 +312,8 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 本地比较始终使用原始 PNG 尺寸，不会缩放；两图尺寸不一致直接失败。它以 `pixel.colorTolerance` 过滤抗锯齿等细小渲染噪声，以 `pixel.minRegionPixels` 忽略极小孤立区域，并记录差异区域、差异像素数及比例。明显的大区域或高比例差异判为 `failed`；较小但真实的差异判为 `uncertain`，为后续 AI 复核保留证据。`--name` 指定的用例不在该 round 时记为 `skipped`，不会被视为失败。
 
+报告以测试用例为单位保留完整截图时间线（`first`、`intermediate`、`last` 与 `atMs`），并将相邻截图中位置接近的差异区域聚合为 `incidents`。每个 incident 有本地关注等级 `P1`、`P2` 或 `P3`，用于优先排序；它不替代通过/失败判定。所有 case、截图和区域均固定包含 `ai.status` 字段；未启用 AI 时为 `not_requested`，像素完全一致或硬失败时为 `skipped`。
+
 默认阈值可在 `config.json` 的 `pixel` 中调整：
 
 ```json

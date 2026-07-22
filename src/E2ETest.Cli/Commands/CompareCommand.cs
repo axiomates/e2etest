@@ -35,6 +35,7 @@ public static class CompareCommand
             report.TestCases.Add(new TestCaseComparisonResult
             {
                 Name = requestedName, Status = "skipped", Error = "本轮未找到该测试用例的 replay 结果。",
+                FinalVerdict = "skipped", Ai = new AiAssessment { Status = "skipped", Reason = "testcase_not_in_round" },
             });
         }
 
@@ -45,6 +46,8 @@ public static class CompareCommand
             string caseOutputDir = SafeId.ResolveTestCase(Path.Combine(reportDir, "testcases"), replayCase.Name);
             try
             {
+                TestCaseManifest? manifest = TryLoadManifest(repo.TestCaseDir(replayCase.Name));
+                caseResult.DurationMs = manifest?.DurationMs;
                 foreach (var shot in replayCase.Shots.OrderBy(item => item.ShotIndex))
                 {
                     string baselinePath = Path.Combine(repo.TestCaseDir(replayCase.Name), "baseline", $"shot-{shot.ShotIndex:D4}.png");
@@ -54,18 +57,22 @@ public static class CompareCommand
                         caseResult.Shots.Add(new ShotComparisonResult
                         {
                             ShotIndex = shot.ShotIndex, Status = "failed", BaselinePath = baselinePath, ReplayPath = replayPath,
+                            FinalVerdict = "failed", HardFailureCode = "image_missing",
+                            Ai = new AiAssessment { Status = "skipped", Reason = "hard_failure" },
                             Error = shot.Error ?? "缺少可比较的 baseline 或 replay 截图。",
                         });
                         continue;
                     }
                     caseResult.Shots.Add(comparer.Compare(baselinePath, replayPath, caseOutputDir, shot.ShotIndex, config.Pixel));
                 }
-                caseResult.Status = caseResult.Shots.Any(item => item.Status == "failed") ? "failed" :
-                    caseResult.Shots.Any(item => item.Status == "uncertain") ? "uncertain" : "passed";
+                foreach (var shot in caseResult.Shots)
+                    shot.AtMs = manifest?.Shots.FirstOrDefault(item => item.Index == shot.ShotIndex)?.AtMs;
+                IncidentAggregator.Finalize(caseResult);
             }
             catch (Exception ex)
             {
-                caseResult.Status = "failed";
+                caseResult.Status = caseResult.FinalVerdict = "failed";
+                caseResult.Ai = new AiAssessment { Status = "skipped", Reason = "comparison_error" };
                 caseResult.Error = ex.ToString();
             }
             report.TestCases.Add(caseResult);
@@ -81,5 +88,13 @@ public static class CompareCommand
         AtomicFile.WriteAllText(Path.Combine(reportDir, "result.json"), Json.Serialize(report));
         Console.WriteLine($"对比完成: 通过 {report.PassedTestCases}, 失败 {report.FailedTestCases}, 待确认 {report.UncertainTestCases}, 跳过 {report.SkippedTestCases}, 目录 {reportDir}");
         return report.FailedTestCases == 0 && report.UncertainTestCases == 0 ? 0 : 1;
+    }
+
+    private static TestCaseManifest? TryLoadManifest(string testCaseDir)
+    {
+        string path = Path.Combine(testCaseDir, "manifest.json");
+        if (!File.Exists(path)) return null;
+        try { return Json.Deserialize<TestCaseManifest>(AtomicFile.ReadAllText(path)); }
+        catch { return null; }
     }
 }

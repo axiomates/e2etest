@@ -15,6 +15,8 @@ public sealed class PixelComparer
             return new ShotComparisonResult
             {
                 ShotIndex = shotIndex, Status = "failed", BaselinePath = baselinePath, ReplayPath = replayPath,
+                FinalVerdict = "failed", HardFailureCode = "image_dimensions_mismatch",
+                Ai = new AiAssessment { Status = "skipped", Reason = "hard_failure" },
                 Error = $"截图尺寸不一致: baseline {originalBaseline.Width}x{originalBaseline.Height}, replay {originalReplay.Width}x{originalReplay.Height}。",
             };
 
@@ -27,6 +29,7 @@ public sealed class PixelComparer
         List<PixelRegion> regions = FindRegions(changed, width, height, settings.MinRegionPixels, out bool[] retained);
         regions = MergeEvidenceRegions(regions, width, height, settings.RegionPaddingPixels);
         int changedPixels = retained.Count(value => value);
+        bool exactPixelMatch = diffs.All(value => value == 0);
         int largest = regions.Count == 0 ? 0 : regions.Max(region => region.ChangedPixels);
         string status = changedPixels == 0 ? "passed" :
             changedPixels / (double)length >= settings.FailChangedPixelRatio || largest >= settings.FailLargestRegionPixels
@@ -42,14 +45,18 @@ public sealed class PixelComparer
         diff.Save(diffPath, ImageFormat.Png);
         overlay.Save(overlayPath, ImageFormat.Png);
         ExportRegionArtifacts(baseline, replay, diff, overlay, regions, outputDir, shotIndex, settings);
+        foreach (var pair in regions.OrderByDescending(region => region.ChangedPixels).Take(settings.MaxRegions).Select((region, index) => (region, index)))
+            pair.region.Id = $"shot-{shotIndex:D4}-region-{pair.index + 1:D3}";
         return new ShotComparisonResult
         {
             ShotIndex = shotIndex, Status = status, BaselinePath = baselinePath, ReplayPath = replayPath,
+            FinalVerdict = status,
+            Ai = exactPixelMatch ? new AiAssessment { Status = "skipped", Reason = "exact_pixel_match" } : new AiAssessment(),
             DiffPath = diffPath, OverlayPath = overlayPath,
             Pixel = new PixelComparisonResult
             {
                 Width = width, Height = height, ColorTolerance = settings.ColorTolerance,
-                ChangedPixels = changedPixels, ChangedRatio = Math.Round(changedPixels / (double)length, 6),
+                ChangedPixels = changedPixels, ExactPixelMatch = exactPixelMatch, ChangedRatio = Math.Round(changedPixels / (double)length, 6),
                 LargestRegionPixels = largest, Regions = regions.OrderByDescending(region => region.ChangedPixels).Take(settings.MaxRegions).ToList(),
             },
         };

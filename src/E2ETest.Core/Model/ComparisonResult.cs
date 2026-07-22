@@ -2,6 +2,7 @@ namespace E2ETest.Core.Model;
 
 public sealed class PixelRegion
 {
+    public string Id { get; set; } = "";
     public int X { get; set; }
     public int Y { get; set; }
     public int Width { get; set; }
@@ -15,6 +16,7 @@ public sealed class PixelRegion
     public string? ReplayCropPath { get; set; }
     public string? DiffCropPath { get; set; }
     public string? OverlayCropPath { get; set; }
+    public AiAssessment Ai { get; set; } = new();
 }
 
 public sealed class PixelComparisonResult
@@ -23,6 +25,7 @@ public sealed class PixelComparisonResult
     public int Height { get; set; }
     public int ColorTolerance { get; set; }
     public int ChangedPixels { get; set; }
+    public bool ExactPixelMatch { get; set; }
     public double ChangedRatio { get; set; }
     public int LargestRegionPixels { get; set; }
     public List<PixelRegion> Regions { get; set; } = new();
@@ -31,26 +34,61 @@ public sealed class PixelComparisonResult
 public sealed class ShotComparisonResult
 {
     public int ShotIndex { get; set; }
+    public int Ordinal { get; set; }
+    public string Role { get; set; } = "intermediate";
+    public long? AtMs { get; set; }
     public string Status { get; set; } = "pending";
+    public string FinalVerdict { get; set; } = "pending";
+    public string? HardFailureCode { get; set; }
     public string? Error { get; set; }
     public string BaselinePath { get; set; } = "";
     public string ReplayPath { get; set; } = "";
     public string? DiffPath { get; set; }
     public string? OverlayPath { get; set; }
     public PixelComparisonResult? Pixel { get; set; }
+    public AiAssessment Ai { get; set; } = new();
 }
 
 public sealed class TestCaseComparisonResult
 {
     public string Name { get; set; } = "";
     public string Status { get; set; } = "pending";
+    public string FinalVerdict { get; set; } = "pending";
+    public int TotalShots { get; set; }
+    public long? DurationMs { get; set; }
     public string? Error { get; set; }
     public List<ShotComparisonResult> Shots { get; set; } = new();
+    public List<ComparisonIncident> Incidents { get; set; } = new();
+    public int AttentionScore { get; set; }
+    public string AttentionLevel { get; set; } = "P3";
+    public AiAssessment Ai { get; set; } = new();
+}
+
+public sealed class AiAssessment
+{
+    public string Status { get; set; } = "not_requested";
+    public string? Verdict { get; set; }
+    public double? Confidence { get; set; }
+    public string? Reason { get; set; }
+}
+
+public sealed class ComparisonIncident
+{
+    public string Id { get; set; } = "";
+    public string LocalVerdict { get; set; } = "uncertain";
+    public string FinalVerdict { get; set; } = "uncertain";
+    public int ChangedPixels { get; set; }
+    public int AttentionScore { get; set; }
+    public string AttentionLevel { get; set; } = "P3";
+    public List<string> AttentionReasons { get; set; } = new();
+    public List<int> ShotIndexes { get; set; } = new();
+    public List<string> RegionIds { get; set; } = new();
+    public AiAssessment Ai { get; set; } = new();
 }
 
 public sealed class ComparisonRoundResult
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public string RoundId { get; set; } = "";
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset FinishedAt { get; set; }
