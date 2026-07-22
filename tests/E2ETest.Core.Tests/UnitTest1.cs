@@ -23,6 +23,22 @@ public sealed class SafeIdTests
     [InlineData("中文")]
     public void RejectsUnsafeIds(string id) =>
         Assert.Throws<ArgumentException>(() => SafeId.Validate(id, "id"));
+
+    [Theory]
+    [InlineData("登录流程")]
+    [InlineData("case 01")]
+    [InlineData("用例.v2")]
+    public void AcceptsTestCaseNames(string name) =>
+        Assert.Equal(name, SafeId.ValidateTestCaseName(name));
+
+    [Theory]
+    [InlineData("../outside")]
+    [InlineData("a/b")]
+    [InlineData("CON")]
+    [InlineData(" name")]
+    [InlineData("name ")]
+    public void RejectsUnsafeTestCaseNames(string name) =>
+        Assert.Throws<ArgumentException>(() => SafeId.ValidateTestCaseName(name));
 }
 
 public sealed class HotkeyTests
@@ -42,17 +58,17 @@ public sealed class HotkeyTests
 
 public sealed class ManifestTests : IDisposable
 {
-    private readonly string _sampleDir = Path.Combine(AppContext.BaseDirectory, $"manifest-{Guid.NewGuid():N}");
+    private readonly string _testCaseDir = Path.Combine(AppContext.BaseDirectory, $"manifest-{Guid.NewGuid():N}");
 
     [Fact]
     public void ValidManifestRoundTripsAndValidates()
     {
         var manifest = CreateValidManifest();
         string json = Json.Serialize(manifest);
-        var loaded = Json.Deserialize<SampleManifest>(json);
+        var loaded = Json.Deserialize<TestCaseManifest>(json);
 
         Assert.IsType<ScreenshotEvent>(loaded.Events[0]);
-        ManifestValidator.Validate(loaded, _sampleDir, requireBaselineFiles: true);
+        ManifestValidator.Validate(loaded, _testCaseDir, requireBaselineFiles: true);
     }
 
     [Fact]
@@ -61,7 +77,7 @@ public sealed class ManifestTests : IDisposable
         var manifest = CreateValidManifest();
         manifest.Shots[1].Index = manifest.Shots[0].Index;
         Assert.Throws<InvalidDataException>(() =>
-            ManifestValidator.Validate(manifest, _sampleDir, requireBaselineFiles: true));
+            ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
     }
 
     [Fact]
@@ -70,7 +86,7 @@ public sealed class ManifestTests : IDisposable
         var manifest = CreateValidManifest();
         manifest.Events.Add(new KeyEvent { T = 21, Vk = 65, Scan = 30, Down = true });
         Assert.Throws<InvalidDataException>(() =>
-            ManifestValidator.Validate(manifest, _sampleDir, requireBaselineFiles: true));
+            ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
     }
 
     [Fact]
@@ -79,7 +95,7 @@ public sealed class ManifestTests : IDisposable
         var manifest = CreateValidManifest();
         manifest.SchemaVersion = 0;
         Assert.Throws<InvalidDataException>(() =>
-            ManifestValidator.Validate(manifest, _sampleDir, requireBaselineFiles: true));
+            ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
     }
 
     [Fact]
@@ -88,20 +104,18 @@ public sealed class ManifestTests : IDisposable
         Assert.Equal(0, new ReplaySettings().MaxIdleGapMs);
     }
 
-    private SampleManifest CreateValidManifest()
+    private TestCaseManifest CreateValidManifest()
     {
-        string baseline = Path.Combine(_sampleDir, "baseline");
+        string baseline = Path.Combine(_testCaseDir, "baseline");
         Directory.CreateDirectory(baseline);
         SavePng(Path.Combine(baseline, "shot-0001.png"));
         SavePng(Path.Combine(baseline, "shot-0002.png"));
 
-        return new SampleManifest
+        return new TestCaseManifest
         {
             SchemaVersion = ManifestValidator.CurrentSchemaVersion,
-            SampleId = "test-case",
-            DisplayName = "测试",
+            Name = "test-case",
             CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
             DurationMs = 20,
             Capture = new CaptureRule
             {
@@ -129,6 +143,6 @@ public sealed class ManifestTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_sampleDir)) Directory.Delete(_sampleDir, recursive: true);
+        if (Directory.Exists(_testCaseDir)) Directory.Delete(_testCaseDir, recursive: true);
     }
 }

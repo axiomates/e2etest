@@ -7,29 +7,31 @@ using Serilog.Context;
 
 namespace E2ETest.Cli.Commands;
 
-/// <summary>批量回放；每条样例和整轮结果均独立、原子落盘。</summary>
 public static class ReplayCommand
 {
     public static int Run(CliArgs args) => RunAsync(args).GetAwaiter().GetResult();
 
     private static async Task<int> RunAsync(CliArgs args)
     {
+        if (args.Has("sample"))
+            throw new ArgumentException("--sample 已改为 --name。");
+
         string root = args.Get("root") ?? ".";
-        string? requestedSample = args.Get("sample");
+        string? requestedName = args.Get("name");
         string roundId = SafeId.Validate(
             args.Get("round") ?? $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}"[..35],
             "round");
         using var roundLogContext = LogContext.PushProperty("RoundId", roundId);
-        var repo = new SampleRepository(root);
+        var repo = new TestCaseRepository(root);
         var config = ConfigStore.Load(repo.ConfigPath);
         using var desktopLock = repo.AcquireDesktopLock();
 
-        var sampleIds = requestedSample is not null
-            ? new List<string> { SafeId.Validate(requestedSample, "sample") }
-            : repo.ListSampleIds().OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
-        if (sampleIds.Count == 0)
+        var names = requestedName is not null
+            ? new List<string> { SafeId.ValidateTestCaseName(requestedName) }
+            : repo.ListNames().OrderBy(x => x, StringComparer.CurrentCulture).ToList();
+        if (names.Count == 0)
         {
-            Console.Error.WriteLine("没有找到可回放的测试样例。");
+            Console.Error.WriteLine("没有找到可回放的测试用例。");
             return 2;
         }
 
@@ -38,7 +40,7 @@ public static class ReplayCommand
         Directory.CreateDirectory(replaysRoot);
         string roundDir = SafeId.ResolveChild(replaysRoot, roundId, "round");
         if (Directory.Exists(roundDir))
-            throw new InvalidOperationException($"回放轮次已存在，拒绝混入旧结果: {roundId}");
+            throw new InvalidOperationException($"回放轮次已存在: {roundId}");
         Directory.CreateDirectory(roundDir);
         string reservationPath = Path.Combine(roundDir, ".running.lock");
         using var roundReservation = new FileStream(
@@ -55,40 +57,40 @@ public static class ReplayCommand
         {
             RoundId = roundId,
             StartedAt = DateTimeOffset.UtcNow,
-            TotalSamples = sampleIds.Count,
+            TotalTestCases = names.Count,
         };
-        string samplesOutputRoot = Path.Combine(roundDir, "samples");
-        Directory.CreateDirectory(samplesOutputRoot);
+        string testCasesOutputRoot = Path.Combine(roundDir, "testcases");
+        Directory.CreateDirectory(testCasesOutputRoot);
         string roundResultPath = Path.Combine(roundDir, "result.json");
         AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
 
-        Log.Information("开始回放 SampleCount={SampleCount}", sampleIds.Count);
-        Console.WriteLine($"开始回放 {sampleIds.Count} 条样例，轮次: {roundId}");
+        Log.Information("开始回放 TestCaseCount={TestCaseCount}", names.Count);
+        Console.WriteLine($"开始回放 {names.Count} 条测试用例，轮次: {roundId}");
         Console.WriteLine("回放期间控制台将隐藏，避免进入截图。");
         var consoleState = ConsoleWindow.CaptureAndHide();
         try
         {
-            for (int index = 0; index < sampleIds.Count; index++)
+            for (int index = 0; index < names.Count; index++)
             {
-                string sampleId = sampleIds[index];
-                using var sampleLogContext = LogContext.PushProperty("SampleId", sampleId);
-                Log.Information("开始回放样例");
-                SampleReplayResult result;
+                string name = names[index];
+                using var caseLogContext = LogContext.PushProperty("TestCaseName", name);
+                Log.Information("开始回放测试用例");
+                TestCaseReplayResult result;
                 try
                 {
-                    result = await ReplayOneAsync(repo, sampleId, samplesOutputRoot, cancellation.Token);
+                    result = await ReplayOneAsync(repo, name, testCasesOutputRoot, cancellation.Token);
                 }
                 catch (ResetProcessTerminationException ex)
                 {
                     cancellation.Cancel();
-                    result = FailedResult(sampleId, ex);
+                    result = FailedResult(name, ex);
                 }
                 catch (Exception ex)
                 {
-                    result = FailedResult(sampleId, ex);
+                    result = FailedResult(name, ex);
                 }
 
-                try { PersistSyntheticResult(samplesOutputRoot, result); }
+                try { PersistResult(testCasesOutputRoot, result); }
                 catch (Exception persistError)
                 {
                     result.Ok = false;
@@ -99,10 +101,10 @@ public static class ReplayCommand
                 AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
                 if (!cancellation.IsCancellationRequested) continue;
 
-                for (int remaining = index + 1; remaining < sampleIds.Count; remaining++)
+                for (int remaining = index + 1; remaining < names.Count; remaining++)
                 {
-                    var cancelled = CancelledResult(sampleIds[remaining]);
-                    PersistSyntheticResult(samplesOutputRoot, cancelled);
+                    var cancelled = CancelledResult(names[remaining]);
+                    PersistResult(testCasesOutputRoot, cancelled);
                     AddResult(round, cancelled);
                 }
                 AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
@@ -127,35 +129,36 @@ public static class ReplayCommand
             }
         }
 
-        foreach (var result in round.Samples)
-            Console.WriteLine($"[{(result.Ok ? "OK" : "FAIL")}] {result.SampleId}: " +
+        foreach (var result in round.TestCases)
+            Console.WriteLine($"[{(result.Ok ? "OK" : result.Status.ToUpperInvariant())}] {result.Name}: " +
                               (result.Ok ? $"{result.ScreenshotCount} 截图, {result.ElapsedMs}ms" : result.Error));
-        Log.Information("回放轮次完成 Succeeded={Succeeded} Failed={Failed} Cancelled={Cancelled} Directory={Directory}",
-            round.SucceededSamples, round.FailedSamples, round.CancelledSamples, roundDir);
-        Console.WriteLine($"回放完成: 成功 {round.SucceededSamples}, 失败 {round.FailedSamples}, " +
-                          $"取消 {round.CancelledSamples}, 目录 {roundDir}");
+        Log.Information("回放完成 Succeeded={Succeeded} Failed={Failed} Cancelled={Cancelled} Directory={Directory}",
+            round.SucceededTestCases, round.FailedTestCases, round.CancelledTestCases, roundDir);
+        Console.WriteLine($"回放完成: 成功 {round.SucceededTestCases}, 失败 {round.FailedTestCases}, " +
+                          $"取消 {round.CancelledTestCases}, 目录 {roundDir}");
         if (cancellation.IsCancellationRequested) return 130;
-        return round.FailedSamples == 0 ? 0 : 1;
+        return round.FailedTestCases == 0 ? 0 : 1;
     }
 
-    private static async Task<SampleReplayResult> ReplayOneAsync(
-        SampleRepository repo, string sampleId, string samplesOutputRoot, CancellationToken cancellationToken)
+    private static async Task<TestCaseReplayResult> ReplayOneAsync(
+        TestCaseRepository repo,
+        string name,
+        string testCasesOutputRoot,
+        CancellationToken cancellationToken)
     {
-        var result = new SampleReplayResult
+        var result = new TestCaseReplayResult
         {
-            SampleId = sampleId,
+            Name = name,
             StartedAt = DateTimeOffset.UtcNow,
         };
-        string sampleOutputDir = SafeId.ResolveChild(samplesOutputRoot, sampleId, "sample");
+        string outputDir = SafeId.ResolveTestCase(testCasesOutputRoot, name);
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Directory.CreateDirectory(sampleOutputDir);
-            using var snapshot = repo.LoadSnapshot(sampleId);
+            Directory.CreateDirectory(outputDir);
+            using var snapshot = repo.LoadSnapshot(name);
             var manifest = snapshot.Manifest;
-            result.DisplayName = manifest.DisplayName;
-            ManifestValidator.Validate(manifest, snapshot.VersionDirectory, requireBaselineFiles: true);
 
             if (!string.IsNullOrWhiteSpace(manifest.Replay.ResetCommand))
             {
@@ -168,7 +171,7 @@ public static class ReplayCommand
             }
 
             var playback = await new ReplayPlayer().PlayAsync(
-                manifest, snapshot.VersionDirectory, sampleOutputDir, cancellationToken);
+                manifest, snapshot.Directory, outputDir, cancellationToken);
             result.Shots = playback.Shots;
             result.ScreenshotCount = playback.Shots.Count(s => s.Ok);
             result.ElapsedMs = playback.ElapsedMs;
@@ -203,18 +206,6 @@ public static class ReplayCommand
         finally
         {
             result.FinishedAt = DateTimeOffset.UtcNow;
-            try
-            {
-                Directory.CreateDirectory(sampleOutputDir);
-                AtomicFile.WriteAllText(Path.Combine(sampleOutputDir, "result.json"), Json.Serialize(result));
-            }
-            catch (Exception writeError)
-            {
-                result.Ok = false;
-                result.Status = "failed";
-                result.Error = string.Join(Environment.NewLine,
-                    new[] { result.Error, $"result-write: {writeError}" }.Where(x => !string.IsNullOrWhiteSpace(x)));
-            }
         }
 
         return result;
@@ -223,54 +214,53 @@ public static class ReplayCommand
     private static void EnsureLocalPath(string path)
     {
         if (path.StartsWith("\\\\", StringComparison.Ordinal))
-            throw new InvalidOperationException("回放输出必须位于本地磁盘，不能使用网络路径。");
+            throw new InvalidOperationException("回放输出必须位于本地磁盘。");
         string? root = Path.GetPathRoot(path);
         if (string.IsNullOrEmpty(root) || new DriveInfo(root).DriveType == DriveType.Network)
             throw new InvalidOperationException("回放输出必须位于本地磁盘。");
     }
 
-    private static void AddResult(ReplayRoundResult round, SampleReplayResult result)
+    private static void AddResult(ReplayRoundResult round, TestCaseReplayResult result)
     {
-        round.Samples.Add(result);
+        round.TestCases.Add(result);
         switch (result.Status)
         {
             case "succeeded":
-                round.SucceededSamples++;
-                Log.Information("样例回放成功 ScreenshotCount={ScreenshotCount} ElapsedMs={ElapsedMs}",
+                round.SucceededTestCases++;
+                Log.Information("测试用例回放成功 ScreenshotCount={ScreenshotCount} ElapsedMs={ElapsedMs}",
                     result.ScreenshotCount, result.ElapsedMs);
                 break;
             case "cancelled":
-                round.CancelledSamples++;
-                Log.Warning("样例回放取消");
+                round.CancelledTestCases++;
+                Log.Warning("测试用例回放取消");
                 break;
             default:
-                round.FailedSamples++;
-                Log.Error("样例回放失败 Error={Error}", result.Error);
+                round.FailedTestCases++;
+                Log.Error("测试用例回放失败 Error={Error}", result.Error);
                 break;
         }
     }
 
-    private static void PersistSyntheticResult(string samplesOutputRoot, SampleReplayResult result)
+    private static void PersistResult(string outputRoot, TestCaseReplayResult result)
     {
-        string outputDir = SafeId.ResolveChild(samplesOutputRoot, result.SampleId, "sample");
+        string outputDir = SafeId.ResolveTestCase(outputRoot, result.Name);
         Directory.CreateDirectory(outputDir);
         AtomicFile.WriteAllText(Path.Combine(outputDir, "result.json"), Json.Serialize(result));
     }
 
-    private static SampleReplayResult CancelledResult(string sampleId) => new()
+    private static TestCaseReplayResult CancelledResult(string name) => new()
     {
-        SampleId = sampleId,
+        Name = name,
         Status = "cancelled",
-        Error = "轮次已取消，样例未执行。",
+        Error = "轮次已取消，测试用例未执行。",
         StartedAt = DateTimeOffset.UtcNow,
         FinishedAt = DateTimeOffset.UtcNow,
     };
 
-    private static SampleReplayResult FailedResult(string sampleId, Exception error) => new()
+    private static TestCaseReplayResult FailedResult(string name, Exception error) => new()
     {
-        SampleId = sampleId,
+        Name = name,
         Status = "failed",
-        Ok = false,
         Error = error.ToString(),
         StartedAt = DateTimeOffset.UtcNow,
         FinishedAt = DateTimeOffset.UtcNow,

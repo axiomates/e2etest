@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace E2ETest.Core.Native;
 
-/// <summary>隐藏控制台并仅在原本可见时恢复，避免 GUI 后台调用结束后弹出窗口。</summary>
+/// <summary>隐藏控制台并仅在原本可见时恢复。</summary>
 public static class ConsoleWindow
 {
     private const int SW_HIDE = 0;

@@ -18,13 +18,13 @@ public sealed class ReplayPlayer
     private readonly InputInjector _injector = new();
 
     public async Task<ReplayPlaybackResult> PlayAsync(
-        SampleManifest manifest,
-        string sampleDir,
-        string replaySampleDir,
+        TestCaseManifest manifest,
+        string testCaseDir,
+        string replayTestCaseDir,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ManifestValidator.Validate(manifest, sampleDir, requireBaselineFiles: true);
+        ManifestValidator.Validate(manifest, testCaseDir, requireBaselineFiles: true);
         var currentScreen = ScreenGeometry.PrimaryBounds();
         int currentDpi = (int)E2ETest.Core.Native.ShellInterop.GetDpiForSystem();
         if (currentScreen.X != manifest.Capture.Screen.X ||
@@ -38,7 +38,7 @@ public sealed class ReplayPlayer
                 $"{manifest.Capture.Screen.Width}x{manifest.Capture.Screen.Height}@{manifest.Capture.Screen.Dpi}DPI 不一致。");
         }
 
-        Directory.CreateDirectory(replaySampleDir);
+        Directory.CreateDirectory(replayTestCaseDir);
         var clock = Stopwatch.StartNew();
         long previousT = 0;
         double scheduledMs = 0;
@@ -80,7 +80,7 @@ public sealed class ReplayPlayer
                         if (e.Down) heldKeys[key] = e; else heldKeys.Remove(key);
                         break;
                     case ScreenshotEvent e:
-                        captureTasks.Add(CaptureShotAsync(manifest, sampleDir, e.ShotIndex, replaySampleDir, cancellationToken));
+                        captureTasks.Add(CaptureShotAsync(manifest, testCaseDir, e.ShotIndex, replayTestCaseDir, cancellationToken));
                         break;
                 }
                 previousT = inputEvent.T;
@@ -91,7 +91,7 @@ public sealed class ReplayPlayer
             long finalGap = manifest.DurationMs - previousT;
             scheduledMs += Math.Min(maxIdleGap, finalGap / speed);
             await WaitUntilAsync(clock, scheduledMs, cancellationToken);
-            captureTasks.Add(CaptureShotAsync(manifest, sampleDir, finalShot.Index, replaySampleDir, cancellationToken));
+            captureTasks.Add(CaptureShotAsync(manifest, testCaseDir, finalShot.Index, replayTestCaseDir, cancellationToken));
         }
         catch (Exception ex)
         {
@@ -129,15 +129,15 @@ public sealed class ReplayPlayer
     }
 
     private static Task<ReplayShotResult> CaptureShotAsync(
-        SampleManifest manifest,
-        string sampleDir,
+        TestCaseManifest manifest,
+        string testCaseDir,
         int shotIndex,
-        string replaySampleDir,
+        string replayTestCaseDir,
         CancellationToken cancellationToken)
     {
         var shot = manifest.Shots.Single(s => s.Index == shotIndex);
-        string baselinePath = Path.GetFullPath(Path.Combine(sampleDir, shot.File));
-        string replayPath = Path.Combine(replaySampleDir, $"shot-{shotIndex:D4}.png");
+        string baselinePath = Path.GetFullPath(Path.Combine(testCaseDir, shot.File));
+        string replayPath = Path.Combine(replayTestCaseDir, $"shot-{shotIndex:D4}.png");
         System.Drawing.Bitmap bitmap;
         try
         {

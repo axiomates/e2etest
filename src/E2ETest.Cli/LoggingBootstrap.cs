@@ -8,7 +8,7 @@ public static class LoggingBootstrap
 {
     public static void Configure(string root)
     {
-        var repo = new SampleRepository(root);
+        var repo = new TestCaseRepository(root);
         var config = ConfigStore.Load(repo.ConfigPath);
         if (!Enum.TryParse<LogEventLevel>(config.Logging.MinimumLevel, true, out var level))
             level = LogEventLevel.Information;
@@ -28,7 +28,7 @@ public static class LoggingBootstrap
                 logPath,
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: Math.Max(1, config.Logging.RetainedFileCount),
-                fileSizeLimitBytes: 50 * 1024 * 1024,
+                fileSizeLimitBytes: 10 * 1024 * 1024,
                 rollOnFileSizeLimit: true,
                 shared: true,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")

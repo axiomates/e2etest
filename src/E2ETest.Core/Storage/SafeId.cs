@@ -1,8 +1,9 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace E2ETest.Core.Storage;
 
-/// <summary>验证 sampleId/roundId 为单个安全目录名。</summary>
+/// <summary>验证测试用例名称和内部 ID，并安全解析子目录。</summary>
 public static partial class SafeId
 {
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
@@ -27,11 +28,29 @@ public static partial class SafeId
         return value;
     }
 
-    public static string ResolveChild(string parent, string id, string parameterName)
+    public static string ValidateTestCaseName(string value, string parameterName = "name")
     {
-        Validate(id, parameterName);
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 80 || value != value.Trim() ||
+            value is "." or ".." || value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            value.EndsWith('.') || ReservedNames.Contains(value.Split('.')[0]))
+        {
+            throw new ArgumentException(
+                $"{parameterName} 必须是 1-80 字符的合法 Windows 文件名，不能包含路径符号或保留名称。",
+                parameterName);
+        }
+        return value.Normalize(NormalizationForm.FormC);
+    }
+
+    public static string ResolveTestCase(string parent, string name) =>
+        ResolveValidatedChild(parent, ValidateTestCaseName(name), "name");
+
+    public static string ResolveChild(string parent, string id, string parameterName) =>
+        ResolveValidatedChild(parent, Validate(id, parameterName), parameterName);
+
+    private static string ResolveValidatedChild(string parent, string name, string parameterName)
+    {
         string parentFull = Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        string childFull = Path.GetFullPath(Path.Combine(parentFull, id));
+        string childFull = Path.GetFullPath(Path.Combine(parentFull, name));
         if (!childFull.StartsWith(parentFull, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException($"{parameterName} 超出允许目录。", parameterName);
         return childFull;

@@ -6,16 +6,16 @@ namespace E2ETest.Core.Storage;
 /// <summary>集中验证 manifest 的时间轴、截图映射、路径和截图尺寸不变量。</summary>
 public static class ManifestValidator
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
-    public static void Validate(SampleManifest manifest, string sampleDir, bool requireBaselineFiles)
+    public static void Validate(TestCaseManifest manifest, string testCaseDir, bool requireBaselineFiles)
     {
         if (manifest.SchemaVersion != CurrentSchemaVersion)
             throw new InvalidDataException($"不支持的 manifest schemaVersion: {manifest.SchemaVersion}");
         if (manifest.Capture is null || manifest.Capture.Screen is null || manifest.Capture.CropRect is null ||
             manifest.Replay is null || manifest.Events is null || manifest.Shots is null)
             throw new InvalidDataException("manifest 缺少必需对象或数组。");
-        SafeId.Validate(manifest.SampleId, nameof(manifest.SampleId));
+        SafeId.ValidateTestCaseName(manifest.Name);
         if (manifest.DurationMs < 0) throw new InvalidDataException("durationMs 不能为负数。");
         if (!double.IsFinite(manifest.Replay.SpeedFactor) || manifest.Replay.SpeedFactor <= 0)
             throw new InvalidDataException("replay.speedFactor 必须大于 0。");
@@ -63,7 +63,7 @@ public static class ManifestValidator
         if (manifest.Shots.Count == 0) throw new InvalidDataException("样例至少需要一张结尾图。");
         var shotsByIndex = new Dictionary<int, ShotEntry>();
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        string baselineRoot = Path.GetFullPath(Path.Combine(sampleDir, "baseline"))
+        string baselineRoot = Path.GetFullPath(Path.Combine(testCaseDir, "baseline"))
             .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
 
         foreach (var shot in manifest.Shots)
@@ -77,7 +77,7 @@ public static class ManifestValidator
             if (shot.RequestedAtMs is < 0 || shot.RequestedAtMs > shot.AtMs)
                 throw new InvalidDataException($"截图请求时间晚于实际抓图时间: {shot.Index}");
 
-            string fullPath = Path.GetFullPath(Path.Combine(sampleDir, shot.File));
+            string fullPath = Path.GetFullPath(Path.Combine(testCaseDir, shot.File));
             if (!fullPath.StartsWith(baselineRoot, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"截图路径必须位于 baseline 目录: {shot.File}");
             if (!files.Add(fullPath)) throw new InvalidDataException($"截图路径重复: {shot.File}");

@@ -9,7 +9,7 @@ public static class ConfigCommand
     public static int Run(CliArgs args)
     {
         string root = args.Get("root") ?? ".";
-        var repo = new SampleRepository(root);
+        var repo = new TestCaseRepository(root);
 
         string sub = args.Positional(0) ?? "show";
         return sub switch
@@ -20,7 +20,7 @@ public static class ConfigCommand
         };
     }
 
-    public static int Init(SampleRepository repo)
+    public static int Init(TestCaseRepository repo)
     {
         if (File.Exists(repo.ConfigPath))
         {
@@ -36,7 +36,7 @@ public static class ConfigCommand
         return 0;
     }
 
-    private static int Show(SampleRepository repo)
+    private static int Show(TestCaseRepository repo)
     {
         var cfg = ConfigStore.Load(repo.ConfigPath);
         Console.WriteLine(E2ETest.Core.Storage.Json.Serialize(cfg));

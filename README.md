@@ -1,6 +1,6 @@
 # E2ETest
 
-E2ETest 是一个面向 Windows 桌面软件的端到端测试工具。它通过全局键鼠录制、时间轴回放和指定时点截图，建立可重复执行的测试样例。
+E2ETest 是一个面向 Windows 桌面软件的端到端测试工具。它通过全局键鼠录制、时间轴回放和指定时点截图，建立可重复执行的测试用例。
 
 当前已实现：
 
@@ -10,15 +10,15 @@ E2ETest 是一个面向 Windows 桌面软件的端到端测试工具。它通过
 - 截图事件时间轴与停止时自动结尾截图
 - 主显示器截图，非全屏模式排除任务栏
 - `SendInput` 时间轴回放
-- 样例级重置命令、超时和批量错误隔离
-- 不可变样例版本、原子版本切换和跨进程读写锁
+- 测试用例级重置命令、超时和批量错误隔离
+- 测试用例创建、列出、删除、播放和跨进程读写锁
 - Console + 按天/大小轮转的文件日志
 - Windows x64 自包含单文件发布
 
 尚未实现：
 
 - 本地像素与 openai-chat 多模态图片对比
-- 可选的图形化测试样例管理与可视化报告（是否实现待定）
+- 可视化报告
 - `compare` / `run` 命令
 
 ## 运行前提
@@ -70,31 +70,34 @@ dotnet publish src\E2ETest.Cli\E2ETest.Cli.csproj `
 
 ## 数据根目录
 
-CLI 默认使用当前工作目录作为数据根目录，也可以通过 `--root <目录>` 指定。
+CLI 默认使用当前工作目录作为数据根目录，也可以通过 `--root <目录>` 指定。目录结构如下：
 
 ```text
-<root>/
-  config.json
-  logs/
-  samples/
-    <sampleId>/
-      current.json
-      versions/
-        <versionId>/
-          manifest.json
-          baseline/
-  replays/
-    <roundId>/
-      result.json
-      samples/
-        <sampleId>/
-          result.json
-          shot-0001.png
+<root>/                                      # 数据根目录
+  config.json                                # 热键、截图、路径、日志及后续对比配置
+  logs/                                      # 按天和文件大小轮转的运行日志
+    e2etest-YYYYMMDD.log                     # 当天日志；超出大小限制时自动分卷
+  testcases/                                 # 已创建的全部测试用例，可由 paths.testCases 修改
+    <name>/                                  # 单个测试用例；目录名就是测试用例名称
+      manifest.json                          # 录制环境、回放设置、输入时间轴及截图索引
+      baseline/                              # 录制时生成的基准截图
+        shot-0001.png                        # 手动截图或停止时生成的结尾截图
+  replays/                                   # 历次回放结果，可由 paths.replays 修改
+    <roundId>/                               # 一次批量或单用例回放轮次
+      result.json                            # 轮次状态、汇总计数及各用例结果
+      testcases/                             # 本轮各测试用例的独立输出
+        <name>/                              # 一个测试用例在本轮的回放结果
+          result.json                        # 状态、错误、耗时及截图明细
+          shot-0001.png                      # 回放时在对应时间点重新抓取的截图
+  .locks/                                    # 测试用例跨进程读写锁目录
+    <name>.lock                              # 仅操作期间存在，操作结束后自动删除
+  .staging/                                  # 录制提交前的临时目录，成功或失败后清理
+  .trash/                                    # 删除用例时的临时中转目录，删除完成后清理
 ```
 
-每次重录会创建不可变版本，全部截图和 manifest 校验成功后才原子切换 `current.json`。失败录制不会覆盖当前有效版本。
+每个名称对应一个测试用例。重录同名用例前必须先删除，不会创建版本历史。`.locks` 目录可能保留，但其中的 `<name>.lock` 文件会在录制、读取、回放或删除结束后删除。`.staging` 和 `.trash` 只在操作过程中短暂出现。
 
-旧 schema 1 样例存在 DPI 坐标歧义，不支持直接回放，需要重新录制。当前 manifest schema 为 2。
+当前 manifest schema 为 3；旧版本化 `samples` 数据不兼容，需要重新录制。
 
 ## CLI 总览
 
@@ -107,6 +110,8 @@ CLI 默认使用当前工作目录作为数据根目录，也可以通过 `--roo
 ```text
 e2etest record
 e2etest replay
+e2etest testcase list
+e2etest testcase delete
 e2etest config init
 e2etest config show
 ```
@@ -115,7 +120,7 @@ e2etest config show
 
 | 参数 | 说明 |
 | --- | --- |
-| `--root <目录>` | 指定配置、样例、回放和日志的数据根目录；默认当前工作目录 |
+| `--root <目录>` | 指定配置、测试用例、回放和日志的数据根目录；默认当前工作目录 |
 
 ## 配置命令
 
@@ -146,7 +151,7 @@ e2etest config show
     "fullscreen": false
   },
   "paths": {
-    "samples": "./samples",
+    "testCases": "./testcases",
     "replays": "./replays",
     "reports": "./reports"
   },
@@ -160,24 +165,20 @@ e2etest config show
 
 控制键只支持单键，例如 `F11`、`F12`、`Pause`、字母或数字；不支持 `Ctrl+F11` 形式的组合控制键。配置的截图键和停止键不会作为普通键盘事件写入时间轴。
 
-如果代码默认值已更新，但目录中存在旧 `config.json`，以现有配置文件为准。
-
 日志同时写入 stderr 和日志文件：
 
 ```text
 logs\e2etest-YYYYMMDD.log
 ```
 
-日志按天和 50 MB 文件大小轮转，默认保留 14 个文件。
+正常录制约 4～6 行日志，批量回放约 4 行固定日志加每个测试用例 2 行，通常每天远低于 1 MB。为兼顾异常堆栈和磁盘占用，日志按天或达到 10 MB 时轮转，默认保留 14 个文件，常规情况下约保留 14 天且总量不超过约 140 MB。
 
 ## 录制命令
 
 ```powershell
 .\e2etest.exe record `
-  --sample <sampleId> `
-  [--name <显示名称>] `
+  [--name <测试用例名称>] `
   [--fullscreen | --no-fullscreen] `
-  [--json] `
   [--root <目录>]
 ```
 
@@ -185,19 +186,16 @@ logs\e2etest-YYYYMMDD.log
 
 | 参数 | 必需 | 说明 |
 | --- | --- | --- |
-| `--sample <sampleId>` | 是 | 稳定样例 ID；允许字母、数字、点、下划线和连字符，长度 1～80 |
-| `--name <显示名称>` | 否 | 测试人员看到的名称；默认使用 sampleId |
+| `--name <测试用例名称>` | 否 | 1～80 字符的合法 Windows 文件名，支持中文和内部空格；省略时自动生成可读唯一名称 |
 | `--fullscreen` | 否 | 强制整张主屏截图，包含任务栏 |
 | `--no-fullscreen` | 否 | 强制使用主屏工作区截图，排除任务栏 |
-| `--json` | 否 | stdout 输出 NDJSON 状态事件，供未来 GUI 管理器调用 |
 | `--root <目录>` | 否 | 指定数据根目录 |
 
-截图模式优先级：命令行参数高于 `config.json` 中的 `record.fullscreen`。
-
-示例：
+截图模式优先级：命令行参数高于 `config.json` 中的 `record.fullscreen`。示例：
 
 ```powershell
-.\e2etest.exe record --sample login-flow --name "登录流程"
+.\e2etest.exe record --name "登录流程"
+.\e2etest.exe record
 ```
 
 录制开始后控制台会隐藏，只保留托盘图标：
@@ -206,28 +204,24 @@ logs\e2etest-YYYYMMDD.log
 - 默认 F12：停止录制
 - 托盘右键也可以截图或停止
 
-停止后会：
+停止后会固化结尾截图、等待 PNG 后台编码、校验时间轴和截图，然后直接提交测试用例。同名测试用例已存在时返回退出码 2，需先删除后再创建。
 
-1. 固化结尾截图；
-2. 等待 PNG 后台编码完成；
-3. 校验时间轴、截图映射、尺寸和路径；
-4. 提交不可变版本；
-5. 弹出完成或失败通知。
+录制失败时输出错误并返回非零退出码。
 
-`--json` 模式会在 stdout 输出一行一个 JSON：
+## 测试用例管理命令
 
-```json
-{"type":"recording_started","sampleId":"login-flow"}
-{"type":"recording_completed","sampleId":"login-flow","eventCount":100,"screenshotCount":3,"durationMs":12000}
+```powershell
+.\e2etest.exe testcase list [--root <目录>]
+.\e2etest.exe testcase delete --name "登录流程" [--root <目录>]
 ```
 
-失败时输出 `recording_failed`，并返回非零退出码。
+`list` 每行输出一个测试用例名称。`delete` 的 `--name` 为必需参数；缺少名称或目标不存在时返回退出码 2。
 
 ## 回放命令
 
 ```powershell
 .\e2etest.exe replay `
-  [--sample <sampleId>] `
+  [--name <测试用例名称>] `
   [--round <roundId>] `
   [--root <目录>]
 ```
@@ -236,17 +230,17 @@ logs\e2etest-YYYYMMDD.log
 
 | 参数 | 必需 | 说明 |
 | --- | --- | --- |
-| `--sample <sampleId>` | 否 | 只回放指定样例；省略时回放全部有效样例 |
+| `--name <测试用例名称>` | 否 | 只回放指定测试用例；省略时回放全部有效测试用例 |
 | `--round <roundId>` | 否 | 指定本轮 ID；省略时自动生成唯一 ID |
 | `--root <目录>` | 否 | 指定数据根目录 |
 
 示例：
 
 ```powershell
-# 回放单条样例
-.\e2etest.exe replay --sample login-flow
+# 回放单条测试用例
+.\e2etest.exe replay --name "登录流程"
 
-# 回放全部样例
+# 回放全部测试用例
 .\e2etest.exe replay
 
 # 指定轮次 ID
@@ -257,15 +251,15 @@ logs\e2etest-YYYYMMDD.log
 
 - 隐藏控制台，避免进入截图；
 - 校验主屏分辨率、DPI、截图尺寸和 manifest；
-- 执行样例的 `resetCommand`；
+- 执行测试用例的 `resetCommand`；
 - 根据扫描码和时间轴注入键鼠事件；
 - 在截图实际抓取时点生成 replay 截图；
 - 在 `durationMs` 时点生成结尾图；
-- 单个样例失败不会影响其他样例；
+- 单个测试用例失败不会影响其他测试用例；
 - 异常或取消时尽力释放所有按下的键和鼠标按钮；
-- Ctrl+C 取消后返回退出码 130，并为未执行样例写入 cancelled 结果。
+- Ctrl+C 取消后返回退出码 130，并为未执行测试用例写入 cancelled 结果。
 
-样例级回放配置保存在样例 metadata 中：
+测试用例级回放配置保存在 `manifest.json` 中：
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -280,8 +274,8 @@ logs\e2etest-YYYYMMDD.log
 | 退出码 | 含义 |
 | --- | --- |
 | `0` | 命令成功 |
-| `1` | 运行失败或至少一个样例失败 |
-| `2` | 参数错误、缺少样例或无可运行样例 |
+| `1` | 运行失败或至少一个测试用例失败 |
+| `2` | 参数错误、目标不存在或没有可回放测试用例 |
 | `130` | 用户取消回放 |
 
 ## 推荐的录制/回放验收
@@ -289,7 +283,7 @@ logs\e2etest-YYYYMMDD.log
 在主屏执行：
 
 ```powershell
-.\e2etest.exe record --sample core-acceptance
+.\e2etest.exe record --name core-acceptance
 ```
 
 录制内容建议包含：
@@ -303,7 +297,7 @@ logs\e2etest-YYYYMMDD.log
 恢复被测软件初始状态后执行：
 
 ```powershell
-.\e2etest.exe replay --sample core-acceptance
+.\e2etest.exe replay --name core-acceptance
 ```
 
-检查 `replays/<roundId>/result.json`、样例 `result.json` 和 replay 截图数量是否与 baseline 一致。
+检查 `replays/<roundId>/result.json`、测试用例 `result.json` 和 replay 截图数量是否与 baseline 一致。

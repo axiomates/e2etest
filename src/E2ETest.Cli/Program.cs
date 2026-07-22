@@ -22,6 +22,7 @@ try
     {
         "record" => RecordCommand.Run(rest),
         "replay" => ReplayCommand.Run(rest),
+        "testcase" => TestCaseCommand.Run(rest),
         "config" => ConfigCommand.Run(rest),
         "help" or "-h" or "--help" => Help(),
         _ => Unknown(command),
@@ -52,22 +53,23 @@ static int Unknown(string cmd)
 static void PrintUsage()
 {
     Console.WriteLine("""
-    e2etest — 端到端录制/回放/对比测试工具
+    e2etest — Windows 桌面端到端录制与回放工具
 
     用法:
-      e2etest record  --sample <id> [--name <显示名>] [--fullscreen] [--json] [--root <dir>]
-          录制一条测试样例；--json 输出供 GUI 监听的 NDJSON 状态事件
+      e2etest record [--name <名称>] [--fullscreen | --no-fullscreen] [--root <dir>]
+          创建测试用例；省略 --name 时自动生成名称
 
-      e2etest replay  [--sample <id>] [--round <id>] [--root <dir>]
-          回放全部或指定样例，按时间轴注入输入并截图；单条失败不影响后续样例
+      e2etest replay [--name <名称>] [--round <id>] [--root <dir>]
+          回放全部或指定测试用例；单条失败不影响后续用例
 
-      e2etest config  init [--root <dir>]
-          生成默认 config.json（可在此设置热键、截图模式等）
+      e2etest testcase list [--root <dir>]
+          列出测试用例
 
-      e2etest config  show [--root <dir>]
-          打印当前配置
+      e2etest testcase delete --name <名称> [--root <dir>]
+          删除测试用例
 
-    (compare / run 子命令后续实现)
+      e2etest config init | show [--root <dir>]
+          生成或显示 config.json
 
     配置文件: <root>/config.json
       hotkeys.screenshot  截图键，默认 F11（仅支持单键）

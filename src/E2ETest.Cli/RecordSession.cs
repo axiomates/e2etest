@@ -14,12 +14,10 @@ public sealed class RecordSession : ApplicationContext
     private enum ControlKind { Screenshot, Stop }
     private readonly record struct ControlRequest(ControlKind Kind, long AtMs);
 
-    private readonly SampleRepository _repo;
-    private readonly string _sampleId;
-    private readonly string _displayName;
+    private readonly TestCaseRepository _repo;
+    private readonly string _name;
     private readonly RecordingStaging _staging;
-    private readonly SampleWriteLease _sampleLease;
-    private readonly SampleManifest? _existingManifest;
+    private readonly TestCaseWriteLease _writeLease;
     private readonly CaptureRule _capture;
     private readonly Recorder _recorder;
     private readonly NotifyIcon _tray;
@@ -40,22 +38,18 @@ public sealed class RecordSession : ApplicationContext
     public long DurationMs { get; private set; }
 
     public RecordSession(
-        SampleRepository repo,
-        string sampleId,
-        string displayName,
+        TestCaseRepository repo,
+        string name,
         RecordingStaging staging,
-        SampleWriteLease sampleLease,
-        SampleManifest? existingManifest,
+        TestCaseWriteLease writeLease,
         CaptureRule capture,
         Hotkey screenshotKey,
         Hotkey stopKey)
     {
         _repo = repo;
-        _sampleId = sampleId;
-        _displayName = displayName;
+        _name = name;
         _staging = staging;
-        _sampleLease = sampleLease;
-        _existingManifest = existingManifest;
+        _writeLease = writeLease;
         _capture = capture;
         _recorder = new Recorder(screenshotKey, stopKey);
         _recorder.ScreenshotHotkeyPressed += atMs =>
@@ -66,7 +60,7 @@ public sealed class RecordSession : ApplicationContext
         _tray = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = TrayText($"E2E 录制中: {displayName}"),
+            Text = TrayText($"E2E 录制中: {name}"),
             Visible = true,
         };
         _menu = new ContextMenuStrip();
@@ -151,7 +145,7 @@ public sealed class RecordSession : ApplicationContext
             catch (Exception ex) { Failure = ex; }
         }
 
-        TrySetTrayText($"E2E 正在保存: {_displayName}");
+        TrySetTrayText($"E2E 正在保存: {_name}");
         TryNotify("录制已停止", Failure is null ? "正在保存截图和测试记录…" : "录制发生错误，正在安全清理…",
             Failure is null ? ToolTipIcon.Info : ToolTipIcon.Error);
 
@@ -205,16 +199,16 @@ public sealed class RecordSession : ApplicationContext
                 var manifest = BuildManifest(duration);
                 ManifestValidator.Validate(manifest, _staging.DirectoryPath, requireBaselineFiles: true);
                 _repo.SaveStagedManifest(_staging, manifest);
-                _repo.CommitStagedSample(_staging, _sampleLease);
+                _repo.CommitStagedTestCase(_staging, _writeLease);
                 Committed = true;
                 EventCount = manifest.Events.Count;
                 DurationMs = duration;
-                TrySetTrayText($"E2E 录制完成: {_displayName}");
-                TryNotify("录制完成", $"{_displayName} 已保存，共 {_shots.Count} 张截图。", ToolTipIcon.Info);
+                TrySetTrayText($"E2E 录制完成: {_name}");
+                TryNotify("录制完成", $"{_name} 已保存，共 {_shots.Count} 张截图。", ToolTipIcon.Info);
             }
             else
             {
-                TrySetTrayText($"E2E 保存失败: {_displayName}");
+                TrySetTrayText($"E2E 保存失败: {_name}");
                 TryNotify("录制保存失败", Failure.Message, ToolTipIcon.Error);
             }
         }
@@ -236,21 +230,17 @@ public sealed class RecordSession : ApplicationContext
         }
     }
 
-    private SampleManifest BuildManifest(long duration)
+    private TestCaseManifest BuildManifest(long duration)
     {
-        var now = DateTimeOffset.UtcNow;
         var events = FilterEventsForTargetScreen(_recorder.Events.OrderBy(e => e.T), _capture.Screen);
-        return new SampleManifest
+        return new TestCaseManifest
         {
             SchemaVersion = ManifestValidator.CurrentSchemaVersion,
-            SampleId = _sampleId,
-            DisplayName = _displayName,
-            Description = _existingManifest?.Description ?? "",
-            CreatedAt = _existingManifest?.CreatedAt ?? now,
-            UpdatedAt = now,
+            Name = _name,
+            CreatedAt = DateTimeOffset.UtcNow,
             DurationMs = duration,
             Capture = _capture,
-            Replay = _existingManifest?.Replay ?? new ReplaySettings(),
+            Replay = new ReplaySettings(),
             Shots = _shots,
             Events = events,
         };

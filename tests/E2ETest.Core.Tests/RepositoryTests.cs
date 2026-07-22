@@ -9,82 +9,56 @@ public sealed class RepositoryTests : IDisposable
     private readonly string _root = Path.Combine(AppContext.BaseDirectory, $"repo-{Guid.NewGuid():N}");
 
     [Fact]
-    public void CommitSwitchesPointerAndKeepsPreviousVersionImmutable()
+    public void CommitCreatesTestCaseAndRejectsDuplicate()
     {
-        var repo = new SampleRepository(_root);
-        string firstVersion;
-        using (var lease = repo.AcquireSampleLock("sample-1"))
+        var repo = new TestCaseRepository(_root);
+        Commit(repo, "登录流程", Color.Red);
+
+        using (var snapshot = repo.LoadSnapshot("登录流程"))
         {
-            var staging = repo.CreateRecordingStaging("sample-1", lease);
-            var manifest = CreateManifest("sample-1", "第一版", staging.DirectoryPath, Color.Red);
-            repo.SaveStagedManifest(staging, manifest);
-            repo.CommitStagedSample(staging, lease);
-            firstVersion = staging.VersionId;
+            Assert.Equal("登录流程", snapshot.Manifest.Name);
+            Assert.True(File.Exists(Path.Combine(snapshot.Directory, "baseline", "shot-0001.png")));
         }
 
-        string firstVersionDirectory;
-        string firstImage;
-        using (var firstSnapshot = repo.LoadSnapshot("sample-1"))
-        {
-            Assert.Equal(firstVersion, firstSnapshot.VersionId);
-            firstVersionDirectory = firstSnapshot.VersionDirectory;
-            firstImage = Path.Combine(firstVersionDirectory, "baseline", "shot-0001.png");
-            Assert.True(File.Exists(firstImage));
-        }
-
-        using (var lease = repo.AcquireSampleLock("sample-1"))
-        {
-            var staging = repo.CreateRecordingStaging("sample-1", lease);
-            var manifest = CreateManifest("sample-1", "第二版", staging.DirectoryPath, Color.Blue);
-            repo.SaveStagedManifest(staging, manifest);
-            repo.CommitStagedSample(staging, lease);
-        }
-
-        using var secondSnapshot = repo.LoadSnapshot("sample-1");
-        Assert.NotEqual(firstVersion, secondSnapshot.VersionId);
-        Assert.True(File.Exists(firstImage));
-        Assert.True(Directory.Exists(firstVersionDirectory));
+        using var lease = repo.AcquireWriteLease("登录流程");
+        var staging = repo.CreateRecordingStaging("登录流程", lease);
+        repo.SaveStagedManifest(staging, CreateManifest("登录流程", staging.DirectoryPath, Color.Blue));
+        Assert.Throws<InvalidOperationException>(() => repo.CommitStagedTestCase(staging, lease));
+        repo.DeleteStaging(staging);
     }
 
     [Fact]
-    public void MetadataUpdateDoesNotRewriteRecordingVersion()
+    public void ListAndDeleteUseSingleTestCaseDirectory()
     {
-        var repo = new SampleRepository(_root);
-        using (var lease = repo.AcquireSampleLock("sample-1"))
-        {
-            var staging = repo.CreateRecordingStaging("sample-1", lease);
-            var manifest = CreateManifest("sample-1", "原名称", staging.DirectoryPath, Color.Black);
-            repo.SaveStagedManifest(staging, manifest);
-            repo.CommitStagedSample(staging, lease);
-        }
-        string version;
-        using (var initialSnapshot = repo.LoadSnapshot("sample-1"))
-            version = initialSnapshot.VersionId;
+        var repo = new TestCaseRepository(_root);
+        Commit(repo, "用例 B", Color.Blue);
+        Commit(repo, "用例 A", Color.Red);
 
-        repo.UpdateMetadata("sample-1", metadata => metadata.DisplayName = "新名称");
-
-        using var snapshot = repo.LoadSnapshot("sample-1");
-        Assert.Equal(version, snapshot.VersionId);
-        Assert.Equal("新名称", snapshot.Manifest.DisplayName);
+        Assert.Equal(new[] { "用例 A", "用例 B" },
+            repo.ListNames().OrderBy(x => x, StringComparer.CurrentCulture));
+        Assert.True(repo.Delete("用例 A"));
+        Assert.False(repo.Exists("用例 A"));
+        Assert.False(repo.Delete("不存在"));
     }
 
     [Fact]
     public void ReadSnapshotBlocksDeleteUntilDisposed()
     {
-        var repo = CreateCommittedRepository();
-        var snapshot = repo.LoadSnapshot("sample-1");
-        Assert.Throws<InvalidOperationException>(() => repo.DeleteSample("sample-1"));
+        var repo = new TestCaseRepository(_root);
+        Commit(repo, "case-1", Color.Black);
+        var snapshot = repo.LoadSnapshot("case-1");
+
+        Assert.Throws<InvalidOperationException>(() => repo.Delete("case-1"));
         snapshot.Dispose();
 
-        repo.DeleteSample("sample-1");
-        Assert.False(repo.Exists("sample-1"));
+        Assert.True(repo.Delete("case-1"));
     }
 
     [Fact]
     public void DesktopLockIsSharedAcrossDifferentRoots()
     {
-        var firstRepo = new SampleRepository(Path.Combine(_root, "first"));
-        var secondRepo = new SampleRepository(Path.Combine(_root, "second"));
+        var firstRepo = new TestCaseRepository(Path.Combine(_root, "first"));
+        var secondRepo = new TestCaseRepository(Path.Combine(_root, "second"));
         using var desktop = firstRepo.AcquireDesktopLock();
         Assert.Throws<InvalidOperationException>(() => secondRepo.AcquireDesktopLock());
     }
@@ -92,41 +66,53 @@ public sealed class RepositoryTests : IDisposable
     [Fact]
     public void DisposedWriteLeaseCannotCommit()
     {
-        var repo = new SampleRepository(_root);
-        var lease = repo.AcquireSampleLock("sample-1");
-        var staging = repo.CreateRecordingStaging("sample-1", lease);
-        var manifest = CreateManifest("sample-1", "测试", staging.DirectoryPath, Color.Black);
-        repo.SaveStagedManifest(staging, manifest);
+        var repo = new TestCaseRepository(_root);
+        var lease = repo.AcquireWriteLease("case-1");
+        var staging = repo.CreateRecordingStaging("case-1", lease);
+        repo.SaveStagedManifest(staging, CreateManifest("case-1", staging.DirectoryPath, Color.Black));
         lease.Dispose();
 
-        Assert.Throws<InvalidOperationException>(() =>
-            repo.CommitStagedSample(staging, lease));
+        Assert.Throws<InvalidOperationException>(() => repo.CommitStagedTestCase(staging, lease));
+        repo.DeleteStaging(staging);
     }
 
     [Fact]
-    public void InvalidMetadataUpdateDoesNotCorruptPointer()
+    public void LockFilesAreDeletedAfterOperations()
     {
-        var repo = CreateCommittedRepository();
-        Assert.Throws<InvalidDataException>(() =>
-            repo.UpdateMetadata("sample-1", metadata => metadata.SampleId = "other"));
+        var repo = new TestCaseRepository(_root);
+        Commit(repo, "case-1", Color.Black);
+        Assert.False(File.Exists(Path.Combine(_root, ".locks", "case-1.lock")));
 
-        using var snapshot = repo.LoadSnapshot("sample-1");
-        Assert.Equal("sample-1", snapshot.Manifest.SampleId);
+        using (repo.LoadSnapshot("case-1")) { }
+        Assert.False(File.Exists(Path.Combine(_root, ".locks", "case-1.lock")));
+
+        repo.Delete("case-1");
+        Assert.False(File.Exists(Path.Combine(_root, ".locks", "case-1.lock")));
     }
 
-    private SampleRepository CreateCommittedRepository()
+    [Fact]
+    public void UsesConfiguredTestCasesDirectory()
     {
-        var repo = new SampleRepository(_root);
-        using var lease = repo.AcquireSampleLock("sample-1");
-        var staging = repo.CreateRecordingStaging("sample-1", lease);
-        var manifest = CreateManifest("sample-1", "测试", staging.DirectoryPath, Color.Black);
-        repo.SaveStagedManifest(staging, manifest);
-        repo.CommitStagedSample(staging, lease);
-        return repo;
+        ConfigStore.Save(Path.Combine(_root, "config.json"), new AppConfig
+        {
+            Paths = new PathsConfig { TestCases = "./custom-cases" },
+        });
+
+        var repo = new TestCaseRepository(_root);
+        Commit(repo, "case-1", Color.Black);
+
+        Assert.True(File.Exists(Path.Combine(_root, "custom-cases", "case-1", "manifest.json")));
     }
 
-    private static SampleManifest CreateManifest(
-        string sampleId, string displayName, string stagingDir, Color color)
+    private static void Commit(TestCaseRepository repo, string name, Color color)
+    {
+        using var lease = repo.AcquireWriteLease(name);
+        var staging = repo.CreateRecordingStaging(name, lease);
+        repo.SaveStagedManifest(staging, CreateManifest(name, staging.DirectoryPath, color));
+        repo.CommitStagedTestCase(staging, lease);
+    }
+
+    private static TestCaseManifest CreateManifest(string name, string stagingDir, Color color)
     {
         string imagePath = Path.Combine(stagingDir, "baseline", "shot-0001.png");
         using (var bitmap = new Bitmap(10, 10))
@@ -136,14 +122,11 @@ public sealed class RepositoryTests : IDisposable
             bitmap.Save(imagePath, System.Drawing.Imaging.ImageFormat.Png);
         }
 
-        var now = DateTimeOffset.UtcNow;
-        return new SampleManifest
+        return new TestCaseManifest
         {
             SchemaVersion = ManifestValidator.CurrentSchemaVersion,
-            SampleId = sampleId,
-            DisplayName = displayName,
-            CreatedAt = now,
-            UpdatedAt = now,
+            Name = name,
+            CreatedAt = DateTimeOffset.UtcNow,
             DurationMs = 0,
             Capture = new CaptureRule
             {

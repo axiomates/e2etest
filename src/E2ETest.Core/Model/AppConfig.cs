@@ -2,7 +2,7 @@ namespace E2ETest.Core.Model;
 
 public sealed class PathsConfig
 {
-    public string Samples { get; set; } = "./samples";
+    public string TestCases { get; set; } = "./testcases";
     public string Replays { get; set; } = "./replays";
     public string Reports { get; set; } = "./reports";
 }
