@@ -8,71 +8,35 @@ using StorageJson = E2ETest.Core.Storage.Json;
 
 namespace E2ETest.Core.Comparing;
 
+/// <summary>以完整 testcase 为上下文请求一次多模态语义复核。</summary>
 public sealed class AiCaseReviewer
 {
     private const string Instructions = """
 你是 Windows 桌面软件端到端测试审查员。baseline 是录制时的预期截图序列，replay 是本次实际截图序列。
-你会收到三张图：第一张是当前步骤的 baseline 全图（期望），第二张是同一步骤的 replay 全图（实际），第三张是当前 incident 的四宫格局部证据：左上 baseline、右上 replay、左下 diff（仅差异像素）、右下 overlay（实际图上的差异位置）。完整测试流程按时间顺序以结构化元数据提供。
-随附元数据中的 rect 与 contextRect 使用原始完整截图像素坐标，左上角为 (0,0)；contextRect 是含周边上下文的裁剪范围。必须结合完整流程顺序、当前全图、区域位置和局部四宫格判断，不要孤立判断差异像素。像素不同本身不是失败：文件名、文件数量、日期时间、运行时数据，以及 3D 动态测距数值可能变化。只有错误提示、异常窗口、关键界面状态缺失、流程明显跑偏或业务语义明显不一致才判 failed。
-只返回 JSON：{"verdict":"passed|failed|needs_review","confidence":0到1,"reason":"中文简述","incidents":[{"id":"incident-001","verdict":"passed|failed|needs_review","reason":"中文说明"}]}。不要 Markdown。
+你会按时间顺序收到一个完整 testcase 的结构化时间线。仅对存在像素差异的步骤附图：每个这样的步骤先给 baseline 全图（期望）和 replay 全图（实际），随后给该步骤一个或多个区域四宫格。四宫格的左上、右上、左下、右下依次是 baseline、replay、diff（仅差异像素）和 overlay（实际图上的差异位置）。同一步的所有区域共同构成该步骤证据；不要只根据其中最大的一块下结论。
+metadata 中 rect 与 contextRect 使用原始完整截图像素坐标，左上角为 (0,0)；图像为便于传输可能缩放，但这些坐标不缩放。结合步骤顺序、全图、区域位置和局部证据判断。像素不同本身不是失败：文件名、文件数量、日期时间、运行时数据，以及 3D 动态测距数值可能变化。只有错误提示、异常窗口、关键界面状态缺失、流程明显跑偏或业务语义明显不一致才判 failed。
+只返回 JSON，不要 Markdown：{"verdict":"passed|failed|needs_review","confidence":0到1,"reason":"中文简述","shots":[{"shotIndex":1,"verdict":"passed|failed|needs_review","reason":"中文说明"}],"regions":[{"id":"shot-0001-region-001","verdict":"passed|failed|needs_review","reason":"中文说明"}]}。shots 必须覆盖所有附图步骤，regions 必须覆盖每个附图区域。
 """;
 
     public async Task ReviewAsync(TestCaseComparisonResult testCase, string outputDir, AiConfig config, CancellationToken cancellationToken = default)
     {
         Validate(config);
-        string timelinePath = Path.Combine(outputDir, "ai-timeline.png");
-        CreateTimeline(testCase, timelinePath, config.MaxImageDimension);
-        testCase.AiTimelinePath = timelinePath;
-        var incidents = testCase.Incidents
-            .Where(incident => incident.LocalVerdict is "failed" or "uncertain")
-            .OrderByDescending(incident => incident.AttentionScore)
-            .Take(config.MaxEvidenceIncidents)
-            .ToList();
-        foreach (var incident in incidents)
+        var evidence = BuildEvidence(testCase, outputDir, config.MaxEvidenceRegions);
+        if (evidence.Count == 0)
         {
-            var source = testCase.Shots.SelectMany(shot => (shot.Pixel?.Regions ?? []).Select(region => new { Shot = shot, Region = region }))
-                .Where(item => incident.RegionIds.Contains(item.Region.Id)).OrderByDescending(item => item.Region.ChangedPixels).FirstOrDefault();
-            if (source is null) continue;
-            string evidencePath = Path.Combine(outputDir, $"ai-{incident.Id}.png");
-            CreateEvidenceSheet(source.Region, evidencePath);
-            await ReviewIncidentAsync(testCase, incident, source.Shot, evidencePath, config, cancellationToken);
+            testCase.Ai = new AiAssessment { Status = "skipped", Reason = "no_ai_eligible_regions" };
+            return;
         }
-        var reviewed = incidents.Where(incident => incident.Ai.Status == "completed").ToList();
-        string verdict = reviewed.Any(incident => incident.Ai.Verdict == "failed") ? "failed" :
-            reviewed.Any(incident => incident.Ai.Verdict == "needs_review") ? "needs_review" : "passed";
-        testCase.Ai = new AiAssessment { Status = "completed", Verdict = verdict, Reason = $"已审查 {reviewed.Count} 个高关注 incident。" };
-        testCase.FinalVerdict = verdict;
-    }
 
-    private static async Task ReviewIncidentAsync(TestCaseComparisonResult testCase, ComparisonIncident incident, ShotComparisonResult sourceShot, string evidencePath, AiConfig config, CancellationToken cancellationToken)
-    {
-        var content = new List<object>
+        var content = BuildRequest(testCase, evidence, config.MaxImageDimension);
+        var body = new
         {
-            new { type = "text", text = Instructions + "\n本次只审查一个 incident；当前步骤为第 " + sourceShot.Ordinal + "/" + testCase.TotalShots + " 张。\n" + StorageJson.Serialize(new
-            {
-                testCase = testCase.Name, testCase.TotalShots, testCase.DurationMs,
-                timeline = testCase.Shots.Select(shot => new { shot.ShotIndex, shot.Ordinal, shot.Role, shot.AtMs, localVerdict = shot.Status, changedPixels = shot.Pixel?.ChangedPixels }),
-                incident = new
-                {
-                    incident.Id, incident.LocalVerdict, incident.AttentionScore, incident.AttentionReasons, incident.ShotIndexes, incident.RegionIds,
-                    regions = RegionsFor(testCase, incident).Select(region => new
-                    {
-                        region.Id,
-                        shotIndex = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).ShotIndex,
-                        ordinal = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Ordinal,
-                        role = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Role,
-                        originalImage = new { width = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Pixel!.Width, height = testCase.Shots.Single(shot => shot.Pixel!.Regions.Contains(region)).Pixel!.Height },
-                        rect = new { region.X, region.Y, region.Width, region.Height },
-                        contextRect = new { x = region.ContextX, y = region.ContextY, width = region.ContextWidth, height = region.ContextHeight },
-                        region.ChangedPixels,
-                    }),
-                },
-            }) },
-            ImagePart(sourceShot.BaselinePath, config.MaxImageDimension),
-            ImagePart(sourceShot.ReplayPath, config.MaxImageDimension),
-            ImagePart(evidencePath, config.MaxImageDimension),
+            model = config.Model,
+            temperature = 0.1,
+            max_tokens = 12000,
+            enable_thinking = false,
+            messages = new[] { new { role = "user", content = (object)content } },
         };
-        var body = new { model = config.Model, temperature = 0.1, max_tokens = 800, enable_thinking = false, messages = new[] { new { role = "user", content = (object)content } } };
         using var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(config.TimeoutMs) };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
         string endpoint = config.BaseUrl.TrimEnd('/') + "/chat/completions";
@@ -81,24 +45,144 @@ public sealed class AiCaseReviewer
         response.EnsureSuccessStatusCode();
         using var responseJson = JsonDocument.Parse(responseText);
         string raw = responseJson.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
-        using var verdict = JsonDocument.Parse(ExtractJson(raw));
-        string final = ReadVerdict(verdict.RootElement.GetProperty("verdict").GetString());
-        incident.Ai = new AiAssessment { Status = "completed", Verdict = final,
-            Confidence = verdict.RootElement.TryGetProperty("confidence", out var confidence) && confidence.TryGetDouble(out var value) ? value : null,
-            Reason = verdict.RootElement.TryGetProperty("reason", out var reason) ? reason.GetString() : null };
-        incident.FinalVerdict = final;
+        using var answer = JsonDocument.Parse(ExtractJson(raw));
+        ApplyAnswer(testCase, evidence, answer.RootElement);
     }
 
-    private static IEnumerable<PixelRegion> RegionsFor(TestCaseComparisonResult testCase, ComparisonIncident incident) =>
-        testCase.Shots.SelectMany(shot => shot.Pixel?.Regions ?? []).Where(region => incident.RegionIds.Contains(region.Id));
+    private static List<EvidenceItem> BuildEvidence(TestCaseComparisonResult testCase, string outputDir, int maximum)
+    {
+        var candidates = testCase.Shots
+            .Where(shot => shot.Pixel is { ExactPixelMatch: false } && shot.HardFailureCode is null)
+            .OrderBy(shot => shot.Ordinal)
+            .SelectMany(shot => (shot.Pixel?.Regions ?? [])
+                .OrderByDescending(region => region.ChangedPixels)
+                .Select(region => new { Shot = shot, Region = region }))
+            .Take(maximum)
+            .ToList();
+        var selectedIds = candidates.Select(item => item.Region.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var shot in testCase.Shots)
+        foreach (var region in shot.Pixel?.Regions ?? [])
+        {
+            if (!selectedIds.Contains(region.Id) && shot.Pixel is { ExactPixelMatch: false } && shot.HardFailureCode is null)
+                region.Ai = new AiAssessment { Status = "skipped", Reason = "ai_evidence_limit" };
+        }
+        var result = new List<EvidenceItem>(candidates.Count);
+        foreach (var item in candidates)
+        {
+            string path = Path.Combine(outputDir, $"ai-{item.Region.Id}.png");
+            CreateEvidenceSheet(item.Region, path);
+            result.Add(new EvidenceItem(item.Shot, item.Region, path));
+        }
+        return result;
+    }
+
+    private static List<object> BuildRequest(TestCaseComparisonResult testCase, List<EvidenceItem> evidence, int maxImageDimension)
+    {
+        var selectedByShot = evidence.GroupBy(item => item.Shot.ShotIndex).ToDictionary(group => group.Key, group => group.ToList());
+        var omitted = testCase.Shots.SelectMany(shot => shot.Pixel?.Regions ?? [])
+            .Where(region => evidence.All(item => item.Region.Id != region.Id))
+            .Select(region => region.Id).ToList();
+        var content = new List<object>
+        {
+            TextPart(Instructions + "\n" + StorageJson.Serialize(new
+            {
+                testCase = new { testCase.Name, testCase.TotalShots, testCase.DurationMs, localVerdict = testCase.Status },
+                timeline = testCase.Shots.Select(shot => new
+                {
+                    shot.ShotIndex, shot.Ordinal, shot.Role, shot.AtMs, localVerdict = shot.Status,
+                    exactPixelMatch = shot.Pixel?.ExactPixelMatch,
+                    changedPixels = shot.Pixel?.ChangedPixels,
+                    changedRatio = shot.Pixel?.ChangedRatio,
+                    regions = (shot.Pixel?.Regions ?? []).Select(region => new
+                    {
+                        region.Id, rect = new { region.X, region.Y, region.Width, region.Height },
+                        contextRect = new { x = region.ContextX, y = region.ContextY, width = region.ContextWidth, height = region.ContextHeight },
+                        region.ChangedPixels,
+                    }),
+                }),
+                attachedRegionIds = evidence.Select(item => item.Region.Id),
+                omittedRegionIds = omitted,
+                note = omitted.Count == 0 ? "所有可比较差异区域均附图。" : "受 ai.maxEvidenceRegions 限制，omittedRegionIds 未附四宫格；不要据此判 passed。",
+            }))
+        };
+
+        foreach (var shot in testCase.Shots.OrderBy(shot => shot.Ordinal))
+        {
+            if (!selectedByShot.TryGetValue(shot.ShotIndex, out var regions)) continue;
+            content.Add(TextPart($"步骤 {shot.Ordinal}/{testCase.TotalShots}（shotIndex={shot.ShotIndex}，role={shot.Role}，atMs={shot.AtMs ?? 0}）：以下依次为 baseline 全图、replay 全图，以及 {regions.Count} 个区域四宫格。"));
+            content.Add(ImagePart(shot.BaselinePath, maxImageDimension));
+            content.Add(ImagePart(shot.ReplayPath, maxImageDimension));
+            foreach (var item in regions)
+            {
+                content.Add(TextPart($"区域 {item.Region.Id}：rect=({item.Region.X},{item.Region.Y},{item.Region.Width},{item.Region.Height})，contextRect=({item.Region.ContextX},{item.Region.ContextY},{item.Region.ContextWidth},{item.Region.ContextHeight})，changedPixels={item.Region.ChangedPixels}。"));
+                content.Add(ImagePart(item.Path, maxImageDimension));
+            }
+        }
+        return content;
+    }
+
+    private static void ApplyAnswer(TestCaseComparisonResult testCase, List<EvidenceItem> evidence, JsonElement answer)
+    {
+        string final = ReadVerdict(answer.GetProperty("verdict").GetString());
+        testCase.Ai = new AiAssessment
+        {
+            Status = "completed",
+            Verdict = final,
+            Confidence = answer.TryGetProperty("confidence", out var confidence) && confidence.TryGetDouble(out var value) ? value : null,
+            Reason = answer.TryGetProperty("reason", out var reason) ? reason.GetString() : null,
+        };
+        testCase.FinalVerdict = final;
+
+        var shots = ReadJudgments(answer, "shots", "shotIndex");
+        var regions = ReadJudgments(answer, "regions", "id");
+        foreach (var group in evidence.GroupBy(item => item.Shot.ShotIndex))
+        {
+            var shot = group.First().Shot;
+            shots.TryGetValue(shot.ShotIndex.ToString(), out var assessment);
+            shot.Ai = assessment ?? new AiAssessment { Status = "completed", Verdict = final, Reason = "AI 未单独返回该步骤，采用 testcase 结论。" };
+            shot.FinalVerdict = shot.Ai.Verdict ?? final;
+        }
+        foreach (var item in evidence)
+        {
+            regions.TryGetValue(item.Region.Id, out var assessment);
+            item.Region.Ai = assessment ?? new AiAssessment { Status = "completed", Verdict = final, Reason = "AI 未单独返回该区域，采用 testcase 结论。" };
+        }
+        foreach (var incident in testCase.Incidents)
+        {
+            var assessments = evidence.Where(item => incident.RegionIds.Contains(item.Region.Id)).Select(item => item.Region.Ai).ToList();
+            if (assessments.Count == 0) continue;
+            string verdict = assessments.Any(item => item.Verdict == "failed") ? "failed" : assessments.Any(item => item.Verdict == "needs_review") ? "needs_review" : "passed";
+            incident.Ai = new AiAssessment { Status = "completed", Verdict = verdict, Reason = "由关联区域 AI 结论汇总。" };
+            incident.FinalVerdict = verdict;
+        }
+    }
+
+    private static Dictionary<string, AiAssessment> ReadJudgments(JsonElement answer, string property, string idProperty)
+    {
+        var result = new Dictionary<string, AiAssessment>(StringComparer.Ordinal);
+        if (!answer.TryGetProperty(property, out var items) || items.ValueKind != JsonValueKind.Array) return result;
+        foreach (var item in items.EnumerateArray())
+        {
+            if (!item.TryGetProperty(idProperty, out var id)) continue;
+            string? key = id.ValueKind == JsonValueKind.Number ? id.GetInt32().ToString() : id.GetString();
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            result[key] = new AiAssessment
+            {
+                Status = "completed", Verdict = item.TryGetProperty("verdict", out var verdict) ? ReadVerdict(verdict.GetString()) : "needs_review",
+                Reason = item.TryGetProperty("reason", out var reason) ? reason.GetString() : null,
+            };
+        }
+        return result;
+    }
 
     private static void Validate(AiConfig config)
     {
         if (string.IsNullOrWhiteSpace(config.BaseUrl) || string.IsNullOrWhiteSpace(config.ApiKey) || string.IsNullOrWhiteSpace(config.Model) ||
-            config.MaxImageDimension < 0 || config.MaxEvidenceIncidents < 1 || config.TimeoutMs <= 0)
+            config.MaxImageDimension < 0 || config.MaxEvidenceRegions < 1 || config.TimeoutMs <= 0)
             throw new InvalidDataException("ai 配置不完整或无效。");
     }
 
+    private static object TextPart(string text) => new { type = "text", text };
     private static object ImagePart(string path, int maxDimension) => new { type = "image_url", image_url = new { url = "data:image/png;base64," + Convert.ToBase64String(ReadImage(path, maxDimension)) } };
 
     private static byte[] ReadImage(string path, int maxDimension)
@@ -110,40 +194,13 @@ public sealed class AiCaseReviewer
         using var stream = new MemoryStream(); resized.Save(stream, ImageFormat.Png); return stream.ToArray();
     }
 
-    private static void CreateTimeline(TestCaseComparisonResult testCase, string path, int maxDimension)
-    {
-        const int imageWidth = 280, imageHeight = 166, labelHeight = 22, margin = 10;
-        const int header = 20;
-        using var sheet = new Bitmap(imageWidth * 2 + margin * 3, testCase.Shots.Count * (imageHeight + labelHeight + margin) + margin + header);
-        using var graphics = Graphics.FromImage(sheet);
-        graphics.Clear(Color.White); using var font = new Font(SystemFonts.DefaultFont.FontFamily, 9);
-        graphics.DrawString("LEFT: baseline (expected)                                      RIGHT: replay (actual)", font, Brushes.Black, margin, margin);
-        foreach (var shot in testCase.Shots)
-        {
-            int y = margin + header + (shot.Ordinal - 1) * (imageHeight + labelHeight + margin);
-            graphics.DrawString($"{shot.Ordinal}/{testCase.TotalShots} {shot.Role} {shot.AtMs ?? 0}ms {shot.Status}", font, Brushes.Black, margin, y);
-            DrawThumb(graphics, shot.BaselinePath, new Rectangle(margin, y + labelHeight, imageWidth, imageHeight));
-            DrawThumb(graphics, shot.ReplayPath, new Rectangle(margin * 2 + imageWidth, y + labelHeight, imageWidth, imageHeight));
-        }
-        sheet.Save(path, ImageFormat.Png);
-    }
-
-    private static void DrawThumb(Graphics graphics, string path, Rectangle target)
-    {
-        using var image = new Bitmap(path);
-        double scale = Math.Min(target.Width / (double)image.Width, target.Height / (double)image.Height);
-        int width = (int)(image.Width * scale), height = (int)(image.Height * scale);
-        graphics.DrawImage(image, target.X + (target.Width - width) / 2, target.Y + (target.Height - height) / 2, width, height);
-        graphics.DrawRectangle(Pens.Gray, target);
-    }
-
     private static void CreateEvidenceSheet(PixelRegion region, string path)
     {
         using var baseline = new Bitmap(region.BaselineCropPath!);
         using var replay = new Bitmap(region.ReplayCropPath!);
         using var diff = new Bitmap(region.DiffCropPath!);
         using var overlay = new Bitmap(region.OverlayCropPath!);
-        int cellWidth = 360, cellHeight = 220, label = 20, margin = 8;
+        const int cellWidth = 360, cellHeight = 220, label = 20, margin = 8;
         using var sheet = new Bitmap(cellWidth * 2 + margin * 3, (cellHeight + label) * 2 + margin * 3);
         using var graphics = Graphics.FromImage(sheet); graphics.Clear(Color.White); using var font = new Font(SystemFonts.DefaultFont.FontFamily, 9);
         DrawEvidenceCell(graphics, baseline, "baseline", new Rectangle(margin, margin, cellWidth, cellHeight), font);
@@ -170,4 +227,6 @@ public sealed class AiCaseReviewer
         if (first < 0 || last < first) throw new InvalidDataException("AI 未返回 JSON。");
         return text[first..(last + 1)];
     }
+
+    private sealed record EvidenceItem(ShotComparisonResult Shot, PixelRegion Region, string Path);
 }

@@ -12,10 +12,10 @@ public sealed class AiConfig
     public string Model { get; set; } = "";
 
     /// <summary>发给模型前图片的最长边；0 表示不缩放。</summary>
-    public int MaxImageDimension { get; set; } = 768;
+    public int MaxImageDimension { get; set; } = 1080;
 
-    /// <summary>每个 case 最多提交给模型的 incident 数量。</summary>
-    public int MaxEvidenceIncidents { get; set; } = 4;
+    /// <summary>每个 case 最多附带的区域四宫格数，按步骤顺序、同一步内差异像素数降序选择。</summary>
+    public int MaxEvidenceRegions { get; set; } = 24;
 
     public int TimeoutMs { get; set; } = 120000;
 }

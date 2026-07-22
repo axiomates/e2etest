@@ -152,6 +152,14 @@ e2etest config show
   "record": {
     "fullscreen": false
   },
+  "ai": {
+    "baseUrl": "",
+    "apiKey": "",
+    "model": "",
+    "maxImageDimension": 1080,
+    "maxEvidenceRegions": 24,
+    "timeoutMs": 120000
+  },
   "replayHooks": {
     "beforeRound": null,
     "afterRound": null,
@@ -317,7 +325,11 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 报告以测试用例为单位保留完整截图时间线（`first`、`intermediate`、`last` 与 `atMs`），并将相邻截图中位置接近的差异区域聚合为 `incidents`。每个 incident 有本地关注等级 `P1`、`P2` 或 `P3`，用于优先排序；它不替代通过/失败判定。所有 case、截图和区域均固定包含 `ai.status` 字段；未启用 AI 时为 `not_requested`，像素完全一致或硬失败时为 `skipped`。
 
-添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。请求按 incident 分开：每次只发送当前步骤的 baseline 全图、replay 全图和一张 baseline/replay/diff/overlay 四宫格证据图；完整流程顺序以结构化文本提供，不会将整轮截图缩小后塞进模型上下文。AI 结论填入既有 `ai` 字段与 `finalVerdict`，本地 `status` 和像素证据始终保留。
+添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。一次请求覆盖一个完整 testcase：结构化时间线保留全部步骤；每个存在差异的步骤依次附 baseline 全图、replay 全图，以及该步骤的一个或多个 baseline/replay/diff/overlay 四宫格。每个四宫格均附原始图坐标 `rect` 和包含周边上下文的 `contextRect`，所以 AI 能知道它属于第几步、位于屏幕何处，以及同一步的其他差异区域。
+
+本地像素 diff、差异像素计数、区域识别和坐标始终在原始 PNG 尺寸上完成，绝不因 AI 缩放而改变。仅在发送 AI 前，baseline/replay 全图和四宫格才按 `ai.maxImageDimension` 缩放，默认最长边为 1080，保持比例且不放大；设为 `0` 可禁用缩放。`ai.maxEvidenceRegions` 默认每个 testcase 最多附 24 张区域四宫格，按流程步骤、同一步内差异像素数排序。若超出该上限，报告与 prompt 会明确列出未附图区域，AI 不应据此判定通过。
+
+AI 同时返回 testcase、步骤和区域三级结论，填入既有 `ai` 字段与 `finalVerdict`；本地 `status` 和像素证据始终保留。
 
 命令同时输出本地汇总和最终汇总。未启用 AI 时 `finalVerdict` 等于本地 `status`；启用 AI 后退出码以最终汇总为准，`failed` 或 `needs_review` 返回非零。
 
