@@ -7,6 +7,14 @@ public sealed class PixelRegion
     public int Width { get; set; }
     public int Height { get; set; }
     public int ChangedPixels { get; set; }
+    public int ContextX { get; set; }
+    public int ContextY { get; set; }
+    public int ContextWidth { get; set; }
+    public int ContextHeight { get; set; }
+    public string? BaselineCropPath { get; set; }
+    public string? ReplayCropPath { get; set; }
+    public string? DiffCropPath { get; set; }
+    public string? OverlayCropPath { get; set; }
 }
 
 public sealed class PixelComparisonResult

@@ -34,6 +34,13 @@ public sealed class PixelComparerTests : IDisposable
         Assert.Equal("failed", result.Status);
         Assert.Equal(64, result.Pixel!.ChangedPixels);
         Assert.Single(result.Pixel.Regions);
+        var region = result.Pixel.Regions[0];
+        Assert.Equal(0, region.ContextX);
+        Assert.Equal(0, region.ContextY);
+        Assert.True(File.Exists(region.BaselineCropPath));
+        Assert.True(File.Exists(region.ReplayCropPath));
+        Assert.True(File.Exists(region.DiffCropPath));
+        Assert.True(File.Exists(region.OverlayCropPath));
     }
 
     private string CreateImage(string name, Color color, Action<Graphics>? draw = null)

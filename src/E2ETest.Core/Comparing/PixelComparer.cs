@@ -34,7 +34,13 @@ public sealed class PixelComparer
         Directory.CreateDirectory(outputDir);
         string diffPath = Path.Combine(outputDir, $"diff-shot-{shotIndex:D4}.png");
         string overlayPath = Path.Combine(outputDir, $"overlay-shot-{shotIndex:D4}.png");
-        SaveArtifacts(replay, retained, diffs, diffPath, overlayPath);
+        using var diff = new Bitmap(replay.Width, replay.Height, PixelFormat.Format32bppArgb);
+        using var overlay = (Bitmap)replay.Clone();
+        RenderArtifacts(replay, retained, diffs, diff, overlay);
+        DrawRegionOverlays(overlay, regions);
+        diff.Save(diffPath, ImageFormat.Png);
+        overlay.Save(overlayPath, ImageFormat.Png);
+        ExportRegionArtifacts(baseline, replay, diff, overlay, regions, outputDir, shotIndex, settings);
         return new ShotComparisonResult
         {
             ShotIndex = shotIndex, Status = status, BaselinePath = baselinePath, ReplayPath = replayPath,
@@ -43,7 +49,7 @@ public sealed class PixelComparer
             {
                 Width = width, Height = height, ColorTolerance = settings.ColorTolerance,
                 ChangedPixels = changedPixels, ChangedRatio = Math.Round(changedPixels / (double)length, 6),
-                LargestRegionPixels = largest, Regions = regions.OrderByDescending(region => region.ChangedPixels).Take(20).ToList(),
+                LargestRegionPixels = largest, Regions = regions.OrderByDescending(region => region.ChangedPixels).Take(settings.MaxRegions).ToList(),
             },
         };
     }
@@ -51,6 +57,7 @@ public sealed class PixelComparer
     private static void Validate(PixelConfig s)
     {
         if (s.ColorTolerance is < 0 or > 255 || s.MinRegionPixels < 1 || s.FailLargestRegionPixels < 1 ||
+            s.RegionPaddingPixels < 0 || s.MaxRegions < 1 ||
             !double.IsFinite(s.FailChangedPixelRatio) || s.FailChangedPixelRatio is < 0 or > 1)
             throw new InvalidDataException("pixel 配置无效。");
     }
@@ -120,10 +127,8 @@ public sealed class PixelComparer
         return result;
     }
 
-    private static unsafe void SaveArtifacts(Bitmap replay, bool[] retained, byte[] diffs, string diffPath, string overlayPath)
+    private static unsafe void RenderArtifacts(Bitmap replay, bool[] retained, byte[] diffs, Bitmap diff, Bitmap overlay)
     {
-        using var diff = new Bitmap(replay.Width, replay.Height, PixelFormat.Format32bppArgb);
-        using var overlay = (Bitmap)replay.Clone();
         var rect = new Rectangle(0, 0, replay.Width, replay.Height);
         var diffData = diff.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         var overlayData = overlay.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
@@ -139,11 +144,65 @@ public sealed class PixelComparer
                     if (!retained[index]) { d[offset + 3] = 0; continue; }
                     byte intensity = (byte)Math.Max(96, (int)diffs[index]);
                     d[offset] = intensity; d[offset + 1] = 0; d[offset + 2] = 255; d[offset + 3] = 255;
-                    o[offset] = (byte)(o[offset] * 0.45); o[offset + 1] = (byte)(o[offset + 1] * 0.45); o[offset + 2] = 255;
+                    o[offset] = (byte)(o[offset] * 0.55); o[offset + 1] = (byte)(o[offset + 1] * 0.55); o[offset + 2] = 255;
                 }
             }
         }
         finally { diff.UnlockBits(diffData); overlay.UnlockBits(overlayData); }
-        diff.Save(diffPath, ImageFormat.Png); overlay.Save(overlayPath, ImageFormat.Png);
+    }
+
+    private static void DrawRegionOverlays(Bitmap overlay, List<PixelRegion> regions)
+    {
+        Color[] colors =
+        [
+            Color.FromArgb(96, 255, 66, 66), Color.FromArgb(96, 0, 210, 255),
+            Color.FromArgb(96, 255, 202, 40), Color.FromArgb(96, 190, 80, 255),
+            Color.FromArgb(96, 50, 220, 120), Color.FromArgb(96, 255, 120, 25),
+        ];
+        using var graphics = Graphics.FromImage(overlay);
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+        foreach (var pair in regions.OrderByDescending(item => item.ChangedPixels).Select((region, index) => (region, index)))
+        {
+            Color fill = colors[pair.index % colors.Length];
+            Color border = Color.FromArgb(255, fill.R, fill.G, fill.B);
+            var rect = new Rectangle(pair.region.X, pair.region.Y, pair.region.Width, pair.region.Height);
+            using var brush = new SolidBrush(fill);
+            using var pen = new Pen(border, 2);
+            graphics.FillRectangle(brush, rect);
+            graphics.DrawRectangle(pen, rect);
+        }
+    }
+
+    private static void ExportRegionArtifacts(
+        Bitmap baseline, Bitmap replay, Bitmap diff, Bitmap overlay, List<PixelRegion> regions,
+        string outputDir, int shotIndex, PixelConfig settings)
+    {
+        int number = 0;
+        foreach (var region in regions.OrderByDescending(item => item.ChangedPixels).Take(settings.MaxRegions))
+        {
+            number++;
+            var context = Rectangle.FromLTRB(
+                Math.Max(0, region.X - settings.RegionPaddingPixels),
+                Math.Max(0, region.Y - settings.RegionPaddingPixels),
+                Math.Min(baseline.Width, region.X + region.Width + settings.RegionPaddingPixels),
+                Math.Min(baseline.Height, region.Y + region.Height + settings.RegionPaddingPixels));
+            region.ContextX = context.X; region.ContextY = context.Y;
+            region.ContextWidth = context.Width; region.ContextHeight = context.Height;
+            string prefix = Path.Combine(outputDir, $"shot-{shotIndex:D4}-region-{number:D3}");
+            region.BaselineCropPath = $"{prefix}-baseline.png";
+            region.ReplayCropPath = $"{prefix}-replay.png";
+            region.DiffCropPath = $"{prefix}-diff.png";
+            region.OverlayCropPath = $"{prefix}-overlay.png";
+            SaveCrop(baseline, context, region.BaselineCropPath);
+            SaveCrop(replay, context, region.ReplayCropPath);
+            SaveCrop(diff, context, region.DiffCropPath);
+            SaveCrop(overlay, context, region.OverlayCropPath);
+        }
+    }
+
+    private static void SaveCrop(Bitmap source, Rectangle rect, string path)
+    {
+        using var crop = source.Clone(rect, PixelFormat.Format32bppArgb);
+        crop.Save(path, ImageFormat.Png);
     }
 }

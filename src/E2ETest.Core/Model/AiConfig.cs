@@ -28,6 +28,12 @@ public sealed class PixelConfig
 
     /// <summary>单个差异区域超过该像素数时本地直接判定失败。</summary>
     public int FailLargestRegionPixels { get; set; } = 2500;
+
+    /// <summary>导出差异区域证据图时在四周保留的上下文像素。</summary>
+    public int RegionPaddingPixels { get; set; } = 32;
+
+    /// <summary>每张截图最多导出的差异区域数量，按差异像素数降序。</summary>
+    public int MaxRegions { get; set; } = 20;
 }
 
 public sealed class HotkeyConfig
