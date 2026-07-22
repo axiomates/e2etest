@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -48,6 +49,42 @@ public partial class MainWindow : Window
             InitialDirectory = Directory.Exists(OpenedPathText.Text) ? OpenedPathText.Text : Environment.CurrentDirectory,
         };
         if (dialog.ShowDialog(this) == true) LoadReports(dialog.FolderName, showErrors: true);
+    }
+
+    private void ReloadReports_Click(object sender, RoutedEventArgs e)
+    {
+        string path = OpenedPathText.Text;
+        if (!string.IsNullOrWhiteSpace(path)) LoadReports(path, showErrors: true);
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void About_Click(object sender, RoutedEventArgs e)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        string version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?.Split('+', 2)[0]
+            ?? assembly.GetName().Version?.ToString(3)
+            ?? "未知";
+        MessageBox.Show(this,
+            $"E2ETest 报告分析\n版本 {version}\n\n用于只读查看 replay/compare 生成的结构化测试报告。",
+            "关于 E2ETest 报告分析",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F5)
+        {
+            ReloadReports_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        else if (e.Key == Key.O && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            OpenReports_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
     }
 
     private void LoadReports(string path, bool showErrors)
@@ -182,7 +219,7 @@ public partial class MainWindow : Window
         else if (_currentRegion is not null)
         {
             Add("AI 四宫格", _currentRegion.AiEvidencePath);
-            AddPair("上下对比", _currentShot?.BaselinePath, _currentShot?.ReplayPath);
+            AddPair("左右对比", _currentShot?.BaselinePath, _currentShot?.ReplayPath);
             Add("差异叠加", _currentRegion.OverlayCropPath);
             Add("基准区域", _currentRegion.BaselineCropPath);
             Add("回放区域", _currentRegion.ReplayCropPath);
@@ -191,7 +228,7 @@ public partial class MainWindow : Window
         else if (_currentShot is not null)
         {
             Add("差异叠加", _currentShot.OverlayPath);
-            AddPair("上下对比", _currentShot.BaselinePath, _currentShot.ReplayPath);
+            AddPair("左右对比", _currentShot.BaselinePath, _currentShot.ReplayPath);
             Add("基准全图", _currentShot.BaselinePath);
             Add("回放全图", _currentShot.ReplayPath);
             Add("差异全图", _currentShot.DiffPath);
@@ -214,8 +251,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void EvidenceModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void EvidenceModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
         ShowEvidence(EvidenceModeCombo.SelectedItem as EvidenceChoice);
+        RefreshAiPanel();
+    }
 
     private void ShowEvidence(EvidenceChoice? choice)
     {
@@ -227,7 +267,7 @@ public partial class MainWindow : Window
         BaselineComparisonImage.Source = null;
         ReplayComparisonImage.Source = null;
         EvidenceImage.Visibility = Visibility.Visible;
-        VerticalComparisonGrid.Visibility = Visibility.Collapsed;
+        SideBySideComparisonGrid.Visibility = Visibility.Collapsed;
         if (string.IsNullOrWhiteSpace(path))
         {
             ImageEmptyText.Text = "没有可显示的证据图";
@@ -251,7 +291,7 @@ public partial class MainWindow : Window
                 BaselineComparisonImage.Source = LoadBitmap(path);
                 ReplayComparisonImage.Source = LoadBitmap(secondaryPath);
                 EvidenceImage.Visibility = Visibility.Collapsed;
-                VerticalComparisonGrid.Visibility = Visibility.Visible;
+                SideBySideComparisonGrid.Visibility = Visibility.Visible;
             }
             ImageEmptyText.Visibility = Visibility.Collapsed;
         }
@@ -276,7 +316,8 @@ public partial class MainWindow : Window
 
     private void RefreshAiPanel()
     {
-        if (_currentShot?.Pixel?.ExactPixelMatch == true)
+        bool sideBySideMode = (EvidenceModeCombo.SelectedItem as EvidenceChoice)?.SecondaryPath is not null;
+        if (_currentShot?.Pixel?.ExactPixelMatch == true || sideBySideMode)
         {
             AiPanel.Visibility = Visibility.Collapsed;
             UpdateSideColumn();
