@@ -30,6 +30,20 @@ E2ETest 是一个面向 Windows 桌面软件的端到端测试工具。它通过
 - 实际测试操作应位于主显示器；副屏鼠标事件会被过滤
 - 数据目录位于本地磁盘
 
+## 支持边界与执行不变量
+
+工具面向同一台 Windows 机器、同一个交互式用户会话、可信的本地数据目录运行；录制和回放使用固定的主显示器分辨率、DPI 与缩放。`testcases`、`replays` 和 `reports` 应位于本地磁盘，且由正常的工具工作流创建和维护。
+
+在这个边界内，compare/run 保证：
+
+- `run` 为 replay 和 compare 使用同一个 roundId；
+- replay、hook 或截图失败会保留为失败，像素结果和 AI 不能将其改为通过；
+- 像素比较始终在原始 PNG 尺寸进行，尺寸不一致是硬失败；
+- AI 超时、掉线、限流或服务端暂时错误只会使 AI 复核失败，最终结论退回本地结果，绝不因 AI 不可用而判通过；
+- round 和 testcase 报告分别落盘，已完成的回放截图仍可用于后续 compare 诊断。
+
+不在本工具当前安全模型内：恶意修改 JSON/图片、恶意 junction 或符号链接、网络盘阻塞或语义差异、跨用户会话、动态显示器/DPI 变化，以及断电时保证所有进行中写入均完整。出现这些条件时，结果不保证可用，应重新录制或重新执行。
+
 ## 构建
 
 ```powershell
@@ -159,6 +173,8 @@ e2etest config show
     "model": "",
     "maxImageDimension": 1080,
     "maxEvidenceRegions": 10,
+    "maxAttempts": 3,
+    "retryDelayMs": 1000,
     "timeoutMs": 300000
   },
   "replayHooks": {
@@ -354,6 +370,8 @@ AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observ
     "model": "Qwen/Qwen3.5-122B-A10B",
     "maxImageDimension": 1080,
     "maxEvidenceRegions": 10,
+    "maxAttempts": 3,
+    "retryDelayMs": 1000,
     "timeoutMs": 300000
   }
 }
@@ -363,7 +381,7 @@ AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observ
 .\e2etest.exe compare --round <roundId> --ai
 ```
 
-`baseUrl` 是 OpenAI 兼容接口的基址（不要加 `/chat/completions`）；`model` 使用服务商给出的模型 ID。`maxImageDimension` 是上传图片的最长边，`0` 表示不缩放；`maxEvidenceRegions` 默认是 `10`，即单个 testcase 最多发送 10 张区域四宫格，按差异像素数从大到小选择。prompt 会同时告知 AI 本 testcase 发现的全部 rect 差异数量、已附的最大区域以及未附图区域的 ID，避免 AI 将前 10 组误认为全部差异。基准图、实际图的本地像素比较始终使用原始尺寸，不受这两个 AI 传输参数影响。
+`baseUrl` 是 OpenAI 兼容接口的基址（不要加 `/chat/completions`）；`model` 使用服务商给出的模型 ID。`maxImageDimension` 是上传图片的最长边，`0` 表示不缩放；`maxEvidenceRegions` 默认是 `10`，即单个 testcase 最多发送 10 张区域四宫格，按差异像素数从大到小选择。prompt 会同时告知 AI 本 testcase 发现的全部 rect 差异数量、已附的最大区域以及未附图区域的 ID，避免 AI 将前 10 组误认为全部差异。`maxAttempts` 默认 `3`，只对网络连接失败、408、429 和 5xx 重试；`retryDelayMs` 默认 `1000`，按指数退避且单次最多等待 10 秒；`timeoutMs` 是包含重试在内的总超时。基准图、实际图的本地像素比较始终使用原始尺寸，不受这些 AI 传输参数影响。
 
 API key 会写入 `config.json`，因此不要提交该文件。若希望密钥完全不落盘，可以将 `baseUrl`、`model` 和 `apiKey` 保持为空，并在运行命令的同一 PowerShell 会话设置环境变量；环境变量只在对应配置项为空时生效：
 

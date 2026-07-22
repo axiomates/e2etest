@@ -17,6 +17,13 @@ public sealed class AiConfig
     /// <summary>每个 case 最多附带的区域四宫格数，按差异像素数从大到小选择。</summary>
     public int MaxEvidenceRegions { get; set; } = 10;
 
+    /// <summary>一次 AI 复核最多请求次数；仅瞬时故障重试。</summary>
+    public int MaxAttempts { get; set; } = 3;
+
+    /// <summary>首次重试前等待时间，后续按指数退避，最大 10 秒。</summary>
+    public int RetryDelayMs { get; set; } = 1000;
+
+    /// <summary>整个 testcase AI 复核（含重试）的总超时。</summary>
     public int TimeoutMs { get; set; } = 300000;
 }
 
