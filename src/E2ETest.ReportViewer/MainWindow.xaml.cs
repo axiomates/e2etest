@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private ShotComparisonResult? _currentShot;
     private PixelRegion? _currentRegion;
     private string? _currentEvidencePath;
+    private string? _openedPath;
     private bool _changingSelection;
 
     public MainWindow()
@@ -46,15 +47,14 @@ public partial class MainWindow : Window
         {
             Title = "选择 reports 根目录或一个 round 目录",
             Multiselect = false,
-            InitialDirectory = Directory.Exists(OpenedPathText.Text) ? OpenedPathText.Text : Environment.CurrentDirectory,
+            InitialDirectory = _openedPath is not null && Directory.Exists(_openedPath) ? _openedPath : Environment.CurrentDirectory,
         };
         if (dialog.ShowDialog(this) == true) LoadReports(dialog.FolderName, showErrors: true);
     }
 
     private void ReloadReports_Click(object sender, RoutedEventArgs e)
     {
-        string path = OpenedPathText.Text;
-        if (!string.IsNullOrWhiteSpace(path)) LoadReports(path, showErrors: true);
+        if (!string.IsNullOrWhiteSpace(_openedPath)) LoadReports(_openedPath, showErrors: true);
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
@@ -92,7 +92,7 @@ public partial class MainWindow : Window
         try
         {
             _rounds = ReportCatalogLoader.Load(path);
-            OpenedPathText.Text = Path.GetFullPath(path);
+            _openedPath = Path.GetFullPath(path);
             RoundCombo.ItemsSource = _rounds;
             if (_rounds.Count == 0)
             {
@@ -122,8 +122,8 @@ public partial class MainWindow : Window
         _changingSelection = false;
         RefreshCases();
         if (round.Warnings.Count > 0)
-            OpenedPathText.ToolTip = string.Join(Environment.NewLine, round.Warnings);
-        else OpenedPathText.ToolTip = null;
+            RoundCombo.ToolTip = string.Join(Environment.NewLine, round.Warnings);
+        else RoundCombo.ToolTip = null;
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => RefreshCases();
@@ -218,12 +218,12 @@ public partial class MainWindow : Window
         }
         else if (_currentRegion is not null)
         {
-            Add("AI 四宫格", _currentRegion.AiEvidencePath);
+            Add("四宫格", _currentRegion.AiEvidencePath);
             AddPair("左右对比", _currentShot?.BaselinePath, _currentShot?.ReplayPath);
             Add("差异叠加", _currentRegion.OverlayCropPath);
+            Add("差异区域", _currentRegion.DiffCropPath);
             Add("基准区域", _currentRegion.BaselineCropPath);
             Add("回放区域", _currentRegion.ReplayCropPath);
-            Add("差异区域", _currentRegion.DiffCropPath);
         }
         else if (_currentShot is not null)
         {

@@ -55,7 +55,6 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="26" />
-            <RowDefinition Height="56" />
             <RowDefinition Height="82" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -72,23 +71,7 @@
             </MenuItem>
         </Menu>
 
-        <Border Grid.Row="1" Background="#101828" Padding="18,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="E2ETest 报告分析" Foreground="White" FontSize="19" FontWeight="SemiBold" />
-                </StackPanel>
-                <TextBlock x:Name="OpenedPathText" Grid.Column="1" VerticalAlignment="Center" Margin="28,0"
-                           Foreground="#D0D5DD" TextTrimming="CharacterEllipsis" />
-                <Button Grid.Column="2" Content="打开报告目录" Click="OpenReports_Click" VerticalAlignment="Center" />
-            </Grid>
-        </Border>
-
-        <Grid Grid.Row="2" Margin="12,8,12,6">
+        <Grid Grid.Row="1" Margin="12,8,12,6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2.2*" />
                 <ColumnDefinition Width="*" />
@@ -129,7 +112,7 @@
             </Border>
         </Grid>
 
-        <Grid Grid.Row="3" Margin="12,0,12,12">
+        <Grid Grid.Row="2" Margin="12,0,12,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="255" MinWidth="220" MaxWidth="330" />
                 <ColumnDefinition Width="6" />
