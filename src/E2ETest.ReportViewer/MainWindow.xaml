@@ -221,9 +221,13 @@
 
                         <GridSplitter Grid.Column="1" Width="6" Background="Transparent" HorizontalAlignment="Stretch" />
 
-                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <StackPanel Margin="12">
-                                <Grid>
+                        <Grid Grid.Column="2" Margin="12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                                <Grid Grid.Row="0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <StackPanel>
                                         <TextBlock x:Name="ShotTitleText" FontSize="16" FontWeight="SemiBold" Foreground="#101828" />
@@ -237,9 +241,10 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <StackPanel x:Name="RegionPanel" Margin="0,8,0,0">
-                                    <TextBlock Text="差异区域" FontWeight="SemiBold" Foreground="#344054" Margin="0,0,0,4" />
+                                <StackPanel x:Name="RegionPanel" Grid.Row="1" Margin="0,8,0,0">
+                                    <TextBlock x:Name="RegionHeadingText" Text="差异区域" FontWeight="SemiBold" Foreground="#344054" Margin="0,0,0,4" />
                                     <ListBox x:Name="RegionList" SelectionChanged="RegionList_SelectionChanged" BorderThickness="0" Background="Transparent"
+                                             PreviewMouseWheel="RegionList_PreviewMouseWheel" ToolTip="区域较多时可使用鼠标滚轮逐个切换"
                                              ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled">
                                         <ListBox.ItemsPanel>
                                             <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
@@ -254,17 +259,21 @@
                                     </ListBox>
                                 </StackPanel>
 
-                                <Grid Margin="0,8,0,0">
+                                <Grid Grid.Row="2" Margin="0,8,0,0">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="3*" MinWidth="280" />
-                                        <ColumnDefinition Width="10" />
-                                        <ColumnDefinition Width="2*" MinWidth="260" />
+                                        <ColumnDefinition Width="*" MinWidth="280" />
+                                        <ColumnDefinition x:Name="AiGapColumn" Width="10" />
+                                        <ColumnDefinition x:Name="AiColumn" Width="280" />
                                     </Grid.ColumnDefinitions>
 
-                                    <StackPanel Grid.Column="0">
-                                        <Border Style="{StaticResource Card}" Background="#EAECF0" MinHeight="250" MaxHeight="460" Padding="6">
+                                    <Grid Grid.Column="0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Border Style="{StaticResource Card}" Background="#EAECF0" Padding="6">
                                             <Grid>
-                                                <Image x:Name="EvidenceImage" Stretch="Uniform" MaxHeight="448" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                <Image x:Name="EvidenceImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
                                                 <Grid x:Name="VerticalComparisonGrid" Visibility="Collapsed">
                                                     <Grid.RowDefinitions>
                                                         <RowDefinition Height="*" />
@@ -286,16 +295,21 @@
                                                 <TextBlock x:Name="ImageEmptyText" Text="没有可显示的证据图" Foreground="#667085" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Grid>
                                         </Border>
-                                        <Grid Margin="0,6,0,0">
+                                        <Grid Grid.Row="1" Margin="0,6,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBlock x:Name="EvidencePathText" Foreground="#667085" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                                             <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Content="打开图片" Margin="6,0,0,0" Padding="10,6" Click="OpenImage_Click" />
                                             <Button Grid.Column="2" Style="{StaticResource SecondaryButton}" Content="定位文件" Margin="6,0,0,0" Padding="10,6" Click="RevealImage_Click" />
                                         </Grid>
-                                    </StackPanel>
+                                    </Grid>
 
-                                    <StackPanel Grid.Column="2">
+                                    <Grid Grid.Column="2">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
                                         <Border x:Name="AiPanel" Style="{StaticResource Card}" Padding="12">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                             <StackPanel>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -307,18 +321,18 @@
                                                 <TextBlock Text="为什么这样判断" Foreground="#667085" Margin="0,9,0,3" />
                                                 <TextBlock x:Name="AiReasonText" TextWrapping="Wrap" Foreground="#101828" LineHeight="19" />
                                             </StackPanel>
+                                            </ScrollViewer>
                                         </Border>
 
-                                        <Border x:Name="ErrorPanel" Style="{StaticResource Card}" Margin="0,8,0,0" Padding="10" BorderBrush="#FDA29B" Background="#FEF3F2">
+                                        <Border x:Name="ErrorPanel" Grid.Row="1" Style="{StaticResource Card}" Margin="0,8,0,0" Padding="10" BorderBrush="#FDA29B" Background="#FEF3F2">
                                             <StackPanel>
                                                 <TextBlock Text="技术信息" FontWeight="SemiBold" Foreground="#B42318" />
                                                 <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="#7A271A" Margin="0,4,0,0" />
                                             </StackPanel>
                                         </Border>
-                                    </StackPanel>
+                                    </Grid>
                                 </Grid>
-                            </StackPanel>
-                        </ScrollViewer>
+                        </Grid>
                     </Grid>
                 </Grid>
             </Border>

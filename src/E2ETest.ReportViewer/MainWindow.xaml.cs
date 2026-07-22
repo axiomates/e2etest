@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using E2ETest.Core.Model;
@@ -138,6 +139,10 @@ public partial class MainWindow : Window
         EvidenceModeCombo.Visibility = exactMatch ? Visibility.Collapsed : Visibility.Visible;
         RegionPanel.Visibility = exactMatch ? Visibility.Collapsed : Visibility.Visible;
         var regions = (shot.Pixel?.Regions ?? []).OrderByDescending(region => region.ChangedPixels).ToList();
+        int detectedRegionCount = Math.Max(regions.Count, shot.Pixel?.DetectedRegionCount ?? 0);
+        RegionHeadingText.Text = detectedRegionCount == regions.Count
+            ? $"差异区域（{regions.Count}）"
+            : $"差异区域（显示 {regions.Count} / 共 {detectedRegionCount}）";
         RegionList.ItemsSource = regions;
         RegionList.SelectedIndex = regions.Count > 0 ? 0 : -1;
         if (regions.Count == 0)
@@ -154,6 +159,17 @@ public partial class MainWindow : Window
         _currentRegion = RegionList.SelectedItem as PixelRegion;
         RefreshEvidenceChoices();
         RefreshAiPanel();
+    }
+
+    private void RegionList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (RegionList.Items.Count < 2) return;
+        int current = Math.Max(0, RegionList.SelectedIndex);
+        int next = Math.Clamp(current + (e.Delta < 0 ? 1 : -1), 0, RegionList.Items.Count - 1);
+        if (next == current) return;
+        RegionList.SelectedIndex = next;
+        RegionList.ScrollIntoView(RegionList.SelectedItem);
+        e.Handled = true;
     }
 
     private void RefreshEvidenceChoices()
@@ -260,10 +276,18 @@ public partial class MainWindow : Window
 
     private void RefreshAiPanel()
     {
+        if (_currentShot?.Pixel?.ExactPixelMatch == true)
+        {
+            AiPanel.Visibility = Visibility.Collapsed;
+            UpdateSideColumn();
+            return;
+        }
+
         AiAssessment? assessment = HasNarrative(_currentRegion?.Ai) ? _currentRegion!.Ai :
             HasNarrative(_currentShot?.Ai) ? _currentShot!.Ai :
             HasNarrative(_currentCase?.Ai) ? _currentCase!.Ai : null;
         AiPanel.Visibility = assessment is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateSideColumn();
         if (assessment is null) return;
         AiConfidenceText.Text = assessment.Confidence is null ? VerdictText(assessment.Verdict) : $"{VerdictText(assessment.Verdict)}  ·  置信度 {assessment.Confidence:P0}";
         AiObservationText.Text = assessment.Observation ?? "未提供观察描述";
@@ -280,6 +304,14 @@ public partial class MainWindow : Window
         }.Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
         ErrorPanel.Visibility = errors.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         ErrorText.Text = string.Join(Environment.NewLine, errors);
+        UpdateSideColumn();
+    }
+
+    private void UpdateSideColumn()
+    {
+        bool visible = AiPanel.Visibility == Visibility.Visible || ErrorPanel.Visibility == Visibility.Visible;
+        AiGapColumn.Width = visible ? new GridLength(10) : new GridLength(0);
+        AiColumn.Width = visible ? new GridLength(280) : new GridLength(0);
     }
 
     private void OpenImage_Click(object sender, RoutedEventArgs e)
@@ -323,10 +355,11 @@ public partial class MainWindow : Window
         ShowEvidence(null);
         AiPanel.Visibility = Visibility.Collapsed;
         ErrorPanel.Visibility = Visibility.Collapsed;
+        UpdateSideColumn();
     }
 
     private static bool NeedsAttention(ShotComparisonResult shot) => shot.FinalVerdict is "failed" or "needs_review" or "uncertain" || shot.HardFailureCode is not null;
-    private static bool HasNarrative(AiAssessment? ai) => ai is not null && (!string.IsNullOrWhiteSpace(ai.Observation) || !string.IsNullOrWhiteSpace(ai.Reason));
+    private static bool HasNarrative(AiAssessment? ai) => ai?.Status == "completed" && (!string.IsNullOrWhiteSpace(ai.Observation) || !string.IsNullOrWhiteSpace(ai.Reason));
     private static string Guidance(TestCaseComparisonResult testCase) => testCase.FinalVerdict switch
     {
         "failed" => "发现明确偏离。建议优先查看默认选中的步骤和证据。",
