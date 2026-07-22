@@ -28,6 +28,9 @@ public sealed class RecordSession : ApplicationContext
     private readonly List<ShotEntry> _shots = new();
     private Task? _finishTask;
     private int _shotCounter;
+    private DateTime _captureStatusUntilUtc;
+    private bool _showingCaptureStatus;
+    private bool _reportedCaptureFailure;
     private bool _stopping;
     private bool _disposed;
 
@@ -59,8 +62,8 @@ public sealed class RecordSession : ApplicationContext
 
         _tray = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
-            Text = TrayText($"E2E 录制中: {name}"),
+            Icon = TrayIcons.RecordingEmpty,
+            Text = TrayText($"E2E 录制中（尚无截图）: {name}"),
             Visible = true,
         };
         _menu = new ContextMenuStrip();
@@ -92,6 +95,8 @@ public sealed class RecordSession : ApplicationContext
     private void DispatchControls()
     {
         if (_stopping) return;
+        RefreshCaptureStatus();
+        if (_stopping) return;
         if (_recorder.Failure is not null)
         {
             BeginStop(_recorder.ElapsedMs, _recorder.Failure);
@@ -114,6 +119,10 @@ public sealed class RecordSession : ApplicationContext
 
     private void CaptureManualShot(long requestedAtMs)
     {
+        _showingCaptureStatus = true;
+        _captureStatusUntilUtc = DateTime.UtcNow.AddMilliseconds(500);
+        TrySetTrayIcon(TrayIcons.Capturing);
+        TrySetTrayText($"E2E 正在截图并保存，请勿操作: {_name}");
         var bitmap = Screenshotter.CaptureBitmap(_capture);
         long capturedAtMs = Math.Max(requestedAtMs, _recorder.ElapsedMs);
         int index = ++_shotCounter;
@@ -130,17 +139,40 @@ public sealed class RecordSession : ApplicationContext
         QueueEncoding(bitmap, file);
     }
 
+    private void RefreshCaptureStatus()
+    {
+        if (!_showingCaptureStatus || _stopping) return;
+        if (_captureTasks.Any(task => !task.IsCompleted) || DateTime.UtcNow < _captureStatusUntilUtc) return;
+
+        var errors = _captureTasks
+            .Where(task => task.IsFaulted)
+            .SelectMany(task => task.Exception!.Flatten().InnerExceptions)
+            .ToList();
+        if (errors.Count > 0)
+        {
+            _reportedCaptureFailure = true;
+            BeginStop(_recorder.ElapsedMs, new AggregateException("截图编码失败。", errors));
+            return;
+        }
+
+        _showingCaptureStatus = false;
+        TrySetTrayIcon(TrayIcons.Recording);
+        TrySetTrayText($"E2E 录制中（{_shots.Count} 张截图）: {_name}");
+    }
+
     private void BeginStop(long atMs, Exception? failure)
     {
         if (_stopping) return;
         _stopping = true;
+        _showingCaptureStatus = false;
         _dispatcher.Stop();
         Failure = failure;
         _recorder.MarkStopRequested(atMs);
         long lastEventMs = _recorder.Events.Count == 0 ? 0 : _recorder.Events.Max(e => e.T);
         long finalAtMs = Math.Max(Math.Max(atMs, _recorder.ElapsedMs), lastEventMs);
 
-        TrySetTrayText($"E2E 正在保存: {_name}");
+        TrySetTrayIcon(Failure is null ? TrayIcons.Saving : TrayIcons.Error);
+        TrySetTrayText(Failure is null ? $"E2E 正在保存: {_name}" : $"E2E 录制失败: {_name}");
         TryNotify("录制已停止", Failure is null ? "正在保存截图和测试记录…" : "录制发生错误，正在安全清理…",
             Failure is null ? ToolTipIcon.Info : ToolTipIcon.Error);
 
@@ -175,7 +207,8 @@ public sealed class RecordSession : ApplicationContext
                     .Where(task => task.IsFaulted)
                     .SelectMany(task => task.Exception!.Flatten().InnerExceptions)
                     .ToList();
-                Failure = Combine(Failure, new AggregateException("截图编码失败。", encodingErrors));
+                if (!_reportedCaptureFailure)
+                    Failure = Combine(Failure, new AggregateException("截图编码失败。", encodingErrors));
             }
 
             if (Failure is null)
@@ -189,11 +222,13 @@ public sealed class RecordSession : ApplicationContext
                 Committed = true;
                 EventCount = manifest.Events.Count;
                 DurationMs = duration;
+                TrySetTrayIcon(TrayIcons.Success);
                 TrySetTrayText($"E2E 录制完成: {_name}");
                 TryNotify("录制完成", $"{_name} 已保存，共 {_shots.Count} 张截图。", ToolTipIcon.Info);
             }
             else
             {
+                TrySetTrayIcon(TrayIcons.Error);
                 TrySetTrayText($"E2E 保存失败: {_name}");
                 TryNotify("录制保存失败", Failure.Message, ToolTipIcon.Error);
             }
@@ -201,6 +236,8 @@ public sealed class RecordSession : ApplicationContext
         catch (Exception ex)
         {
             Failure = Combine(Failure, ex);
+            TrySetTrayIcon(TrayIcons.Error);
+            TrySetTrayText($"E2E 保存失败: {_name}");
             TryNotify("录制保存失败", Failure.Message, ToolTipIcon.Error);
         }
         finally
@@ -288,6 +325,11 @@ public sealed class RecordSession : ApplicationContext
     private void TrySetTrayText(string value)
     {
         try { _tray.Text = TrayText(value); } catch { }
+    }
+
+    private void TrySetTrayIcon(Icon icon)
+    {
+        try { _tray.Icon = icon; } catch { }
     }
 
     private void TryNotify(string title, string text, ToolTipIcon icon)

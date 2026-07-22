@@ -9,6 +9,10 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Icons\tray-*.ico" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -16,6 +20,7 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>e2etest</AssemblyName>
+    <ApplicationIcon>Assets\Icons\e2etest.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>

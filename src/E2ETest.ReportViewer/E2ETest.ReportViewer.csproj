@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>e2etest-report-viewer</AssemblyName>
+    <ApplicationIcon>Assets\Icons\reportviewer.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\E2ETest.Core\E2ETest.Core.csproj" />
