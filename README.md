@@ -252,7 +252,7 @@ logs\e2etest-YYYYMMDD.log
 
 - 隐藏控制台，避免进入截图；
 - 校验主屏分辨率、DPI、截图尺寸和 manifest；
-- 执行测试用例的 `resetCommand`；
+- 先执行测试用例的 `resetCommand`，成功并等待后再开始回放；
 - 根据扫描码和时间轴注入键鼠事件；
 - 在截图实际抓取时点生成 replay 截图；
 - 在 `durationMs` 时点生成结尾图；
@@ -269,6 +269,30 @@ logs\e2etest-YYYYMMDD.log
 | `resetTimeoutMs` | `30000` | reset 超时；超时后终止进程树 |
 | `speedFactor` | `1.0` | 回放速度；1.0 为原始时序 |
 | `maxIdleGapMs` | `0` | 0 表示严格时间轴；大于 0 时压缩超长空闲间隔 |
+
+### 回放前重置（`resetCommand`）
+
+`resetCommand` 是**每个测试用例回放开始前**执行的一条 Windows shell 命令，适合将被测软件恢复到录制时的初始状态，例如关闭残留进程、清理测试数据或重新启动应用。它不在 `config.json` 或命令行参数中配置；请在录制完成后编辑对应测试用例的 `testcases/<name>/manifest.json`：
+
+```json
+{
+  "replay": {
+    "resetCommand": "powershell -NoProfile -Command \"& 'C:\\\\scripts\\\\reset-test-app.ps1'\"",
+    "resetWaitMs": 3000,
+    "resetTimeoutMs": 30000
+  }
+}
+```
+
+单个测试用例的执行顺序如下：
+
+```text
+resetCommand → 等待 resetWaitMs → 回放键鼠事件并截图
+```
+
+`resetCommand` 返回非零退出码、启动失败或超时时，该测试用例会标记为失败，不会执行其输入回放。超时后工具会尝试终止该命令启动的进程树；如果进程树无法终止，为避免污染后续用例，会取消本轮剩余回放。
+
+目前没有整轮回放开始/结束 hook，也没有单个测试用例结束后的可配置 hook。工具在异常或取消时会自动尽力释放仍按下的键和鼠标按钮，但业务清理应放入重置脚本，或由外部调度器在 `e2etest replay` 前后执行。
 
 ## 退出码
 
