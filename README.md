@@ -169,6 +169,10 @@ e2etest config show
   "record": {
     "fullscreen": false
   },
+  "replay": {
+    "betweenTestCasesMs": 10000,
+    "betweenRoundsMs": 20000
+  },
   "ai": {
     "baseUrl": "",
     "apiKey": "",
@@ -307,6 +311,15 @@ logs\e2etest-YYYYMMDD.log
 | `speedFactor` | `1.0` | 回放速度；1.0 为原始时序 |
 | `maxIdleGapMs` | `0` | 0 表示严格时间轴；大于 0 时压缩超长空闲间隔 |
 
+全局回放间隔在 `config.json` 的 `replay` 中配置：
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `betweenTestCasesMs` | `10000` | 同一轮中，上一条 `afterTestCase` 完成到下一条 `beforeTestCase` 开始之间的最短间隔 |
+| `betweenRoundsMs` | `20000` | 上一轮 `afterRound` 完成到下一次 replay 的 `beforeRound` 开始之间的最短间隔；对后续 CLI 进程同样生效 |
+
+两项都可以设为 `0` 以关闭等待，不能为负数。工具会在 `replays/.last-round-finished` 中维护上一轮完成时间；这是内部状态文件，不需要手工编辑。`run` 中 replay 完成后可以立即进入 compare；轮次间隔只限制下一次 replay，不会无意义地阻塞当前轮的 compare。
+
 ### 回放生命周期 Hook
 
 Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省略（`null` 或空字符串表示不执行）：
@@ -324,14 +337,16 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 ```json
 {
   "replayHooks": {
-    "beforeRound": "powershell -NoProfile -Command \"& 'C:\\\\scripts\\\\start-test-env.ps1'\"",
-    "afterRound": "powershell -NoProfile -Command \"& 'C:\\\\scripts\\\\stop-test-env.ps1'\"",
-    "beforeTestCase": "powershell -NoProfile -Command \"& 'C:\\\\scripts\\\\reset-test-data.ps1'\"",
+    "beforeRound": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\Test Scripts\\start-test-env.ps1\"",
+    "afterRound": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\Test Scripts\\stop-test-env.ps1\"",
+    "beforeTestCase": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\Test Scripts\\reset-test-data.ps1\"",
     "afterTestCase": null,
     "timeoutMs": 30000
   }
 }
 ```
+
+推荐使用 PowerShell 的 `-File` 直接运行脚本，不要再套一层 `-Command "& '...'"`；后者同时经过 JSON、`cmd.exe` 和 PowerShell 三层引号解析，很容易因路径空格或转义失败。上面的写法支持带空格的脚本路径。
 
 `beforeRound` 失败时整轮不会执行测试用例；`beforeTestCase` 失败时当前用例不会回放。任意 hook 返回非零退出码、启动失败或超时都会记为失败。超时后工具会尝试终止该命令启动的进程树；若进程树无法终止，为避免污染后续用例，会取消本轮剩余回放。
 

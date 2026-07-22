@@ -27,8 +27,11 @@ public static class ReplayCommand
         var repo = new TestCaseRepository(root);
         var config = ConfigStore.Load(repo.ConfigPath);
         var hooks = config.ReplayHooks ?? new ReplayHooksConfig();
+        var replayConfig = config.Replay ?? new ReplayExecutionConfig();
         if (hooks.TimeoutMs <= 0)
             throw new InvalidDataException("replayHooks.timeoutMs 必须大于 0。");
+        if (replayConfig.BetweenTestCasesMs < 0 || replayConfig.BetweenRoundsMs < 0)
+            throw new InvalidDataException("replay.betweenTestCasesMs 和 replay.betweenRoundsMs 不能小于 0。");
         using var desktopLock = repo.AcquireDesktopLock();
 
         var names = requestedName is not null
@@ -43,6 +46,18 @@ public static class ReplayCommand
         string replaysRoot = Path.GetFullPath(Path.Combine(repo.Root, config.Paths.Replays));
         EnsureLocalPath(replaysRoot);
         Directory.CreateDirectory(replaysRoot);
+        using var cancellation = new CancellationTokenSource();
+        using var cancelRegistration = new ConsoleCancellationRegistration(cancellation);
+        DateTimeOffset? lastRoundFinishedAt = ReplayIntervalGate.ReadLastFinishedAt(replaysRoot);
+        TimeSpan roundWait = ReplayIntervalGate.CalculateRemaining(
+            lastRoundFinishedAt, replayConfig.BetweenRoundsMs, DateTimeOffset.UtcNow);
+        if (roundWait > TimeSpan.Zero)
+        {
+            Console.WriteLine($"等待上一轮回放冷却 {Math.Ceiling(roundWait.TotalMilliseconds):0}ms…");
+            try { await Task.Delay(roundWait, cancellation.Token); }
+            catch (OperationCanceledException) { return 130; }
+        }
+
         string roundDir = SafeId.ResolveChild(replaysRoot, roundId, "round");
         if (Directory.Exists(roundDir))
             throw new InvalidOperationException($"回放轮次已存在: {roundId}");
@@ -50,14 +65,6 @@ public static class ReplayCommand
         string reservationPath = Path.Combine(roundDir, ".running.lock");
         using var roundReservation = new FileStream(
             reservationPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-        using var cancellation = new CancellationTokenSource();
-        ConsoleCancelEventHandler cancelHandler = (_, e) =>
-        {
-            e.Cancel = true;
-            cancellation.Cancel();
-        };
-        Console.CancelKeyPress += cancelHandler;
-
         var round = new ReplayRoundResult
         {
             RoundId = roundId,
@@ -118,6 +125,12 @@ public static class ReplayCommand
                     }
                     AddResult(round, result);
                     AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
+                    if (!cancellation.IsCancellationRequested && index + 1 < names.Count && replayConfig.BetweenTestCasesMs > 0)
+                    {
+                        Log.Information("等待测试用例间隔 IntervalMs={IntervalMs}", replayConfig.BetweenTestCasesMs);
+                        try { await Task.Delay(replayConfig.BetweenTestCasesMs, cancellation.Token); }
+                        catch (OperationCanceledException) { }
+                    }
                     if (!cancellation.IsCancellationRequested) continue;
 
                     for (int remaining = index + 1; remaining < names.Count; remaining++)
@@ -159,10 +172,10 @@ public static class ReplayCommand
                 round.FinishedAt = DateTimeOffset.UtcNow;
                 round.Status = cancellation.IsCancellationRequested ? "cancelled" : roundHookFailed ? "failed" : "completed";
                 AtomicFile.WriteAllText(roundResultPath, Json.Serialize(round));
+                ReplayIntervalGate.MarkRoundFinished(replaysRoot, round.FinishedAt);
             }
             finally
             {
-                Console.CancelKeyPress -= cancelHandler;
                 roundReservation.Dispose();
                 try { File.Delete(reservationPath); }
                 catch (Exception ex) { Log.Warning(ex, "删除轮次运行锁失败 {LockPath}", reservationPath); }
@@ -315,4 +328,21 @@ public static class ReplayCommand
 
     private static string AppendError(string? existing, string next) =>
         string.IsNullOrWhiteSpace(existing) ? next : $"{existing}{Environment.NewLine}{next}";
+
+    private sealed class ConsoleCancellationRegistration : IDisposable
+    {
+        private readonly ConsoleCancelEventHandler _handler;
+
+        public ConsoleCancellationRegistration(CancellationTokenSource cancellation)
+        {
+            _handler = (_, e) =>
+            {
+                e.Cancel = true;
+                cancellation.Cancel();
+            };
+            Console.CancelKeyPress += _handler;
+        }
+
+        public void Dispose() => Console.CancelKeyPress -= _handler;
+    }
 }

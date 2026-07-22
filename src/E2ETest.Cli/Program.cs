@@ -83,5 +83,7 @@ static void PrintUsage()
       hotkeys.screenshot  截图键，默认 F11（仅支持单键）
       hotkeys.startStop   停止录制键，默认 F12（仅支持单键）
       record.fullscreen   默认截图模式，false=裁掉任务栏，true=全屏
+      replay.betweenTestCasesMs  样例间隔，默认 10000ms
+      replay.betweenRoundsMs     轮次间隔，默认 20000ms
     """);
 }

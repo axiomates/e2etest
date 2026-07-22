@@ -31,6 +31,13 @@ public sealed class ReplayHooksConfig
     public int TimeoutMs { get; set; } = 30000;
 }
 
+/// <summary>全局回放节奏；避免测试用例或独立轮次无间隔地连续启动。</summary>
+public sealed class ReplayExecutionConfig
+{
+    public int BetweenTestCasesMs { get; set; } = 10000;
+    public int BetweenRoundsMs { get; set; } = 20000;
+}
+
 /// <summary>全局配置，对应 config.json。所有设置明文存盘，内部使用。</summary>
 public sealed class AppConfig
 {
@@ -40,6 +47,7 @@ public sealed class AppConfig
     public HotkeyConfig Hotkeys { get; set; } = new();
     public PathsConfig Paths { get; set; } = new();
     public RecordConfig Record { get; set; } = new();
+    public ReplayExecutionConfig Replay { get; set; } = new();
     public ReplayHooksConfig ReplayHooks { get; set; } = new();
     public LoggingConfig Logging { get; set; } = new();
 }
