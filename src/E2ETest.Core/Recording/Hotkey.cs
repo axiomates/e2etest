@@ -1,31 +1,16 @@
 namespace E2ETest.Core.Recording;
 
-[Flags]
-public enum HotkeyMods { None = 0, Ctrl = 1, Alt = 2, Shift = 4, Win = 8 }
-
-/// <summary>解析 "Ctrl+Alt+S" 形式的热键为修饰键集合 + 主键 VK。</summary>
+/// <summary>只支持单键的录制控制键，例如 F11、F12 或 Pause。</summary>
 public sealed class Hotkey
 {
-    public HotkeyMods Mods { get; init; }
     public int Vk { get; init; }
 
     public static Hotkey Parse(string text)
     {
-        var mods = HotkeyMods.None;
-        int vk = 0;
-        foreach (var raw in text.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-        {
-            switch (raw.ToLowerInvariant())
-            {
-                case "ctrl" or "control": mods |= HotkeyMods.Ctrl; break;
-                case "alt": mods |= HotkeyMods.Alt; break;
-                case "shift": mods |= HotkeyMods.Shift; break;
-                case "win": mods |= HotkeyMods.Win; break;
-                default: vk = KeyToVk(raw); break;
-            }
-        }
-        if (vk == 0) throw new FormatException($"热键缺少主键: {text}");
-        return new Hotkey { Mods = mods, Vk = vk };
+        if (string.IsNullOrWhiteSpace(text) || text.Contains('+'))
+            throw new FormatException($"录制控制键只支持单键，不支持组合键: {text}");
+
+        return new Hotkey { Vk = KeyToVk(text.Trim()) };
     }
 
     private static int KeyToVk(string key)
@@ -35,8 +20,29 @@ public sealed class Hotkey
             char c = char.ToUpperInvariant(key[0]);
             if (c is >= 'A' and <= 'Z' or >= '0' and <= '9') return c;
         }
-        if (key.StartsWith('F') && int.TryParse(key.AsSpan(1), out int fn) && fn is >= 1 and <= 24)
-            return 0x70 + (fn - 1); // VK_F1 = 0x70
-        throw new FormatException($"无法识别的按键: {key}");
+
+        if (key.StartsWith("F", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(key.AsSpan(1), out int fn) && fn is >= 1 and <= 24)
+            return 0x70 + (fn - 1);
+
+        return key.ToUpperInvariant() switch
+        {
+            "ESC" or "ESCAPE" => 0x1B,
+            "SPACE" => 0x20,
+            "TAB" => 0x09,
+            "ENTER" or "RETURN" => 0x0D,
+            "PAUSE" => 0x13,
+            "INSERT" => 0x2D,
+            "DELETE" or "DEL" => 0x2E,
+            "HOME" => 0x24,
+            "END" => 0x23,
+            "PAGEUP" => 0x21,
+            "PAGEDOWN" => 0x22,
+            "LEFT" => 0x25,
+            "UP" => 0x26,
+            "RIGHT" => 0x27,
+            "DOWN" => 0x28,
+            _ => throw new FormatException($"无法识别的单键: {key}"),
+        };
     }
 }

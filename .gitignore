@@ -16,8 +16,12 @@ config.json
 samples/
 replays/
 reports/
+.locks/
+.staging/
+.trash/
 
 # 日志
+logs/
 *.log
 
 # OS

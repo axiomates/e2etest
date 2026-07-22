@@ -27,6 +27,9 @@ internal static class ShellInterop
     [DllImport("user32.dll")]
     public static extern int GetSystemMetrics(int nIndex);
 
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForSystem();
+
     public const int SM_CXSCREEN = 0;
     public const int SM_CYSCREEN = 1;
 }

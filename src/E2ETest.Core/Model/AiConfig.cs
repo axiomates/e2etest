@@ -24,7 +24,7 @@ public sealed class PixelConfig
 public sealed class HotkeyConfig
 {
     public string StartStop { get; set; } = "F12";
-    public string Screenshot { get; set; } = "F10";
+    public string Screenshot { get; set; } = "F11";
 }
 
 public sealed class ThresholdConfig

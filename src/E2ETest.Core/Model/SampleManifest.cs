@@ -6,7 +6,7 @@ namespace E2ETest.Core.Model;
 /// </summary>
 public sealed class SampleManifest
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; }
 
     /// <summary>目录名，fs-safe，重命名不改它。</summary>
     public string SampleId { get; set; } = "";

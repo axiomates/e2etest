@@ -14,6 +14,6 @@ public static class ConfigStore
     public static void Save(string configPath, AppConfig config)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(configPath))!);
-        File.WriteAllText(configPath, Json.Serialize(config));
+        AtomicFile.WriteAllText(configPath, Json.Serialize(config));
     }
 }
