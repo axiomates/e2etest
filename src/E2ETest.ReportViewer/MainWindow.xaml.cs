@@ -133,6 +133,10 @@ public partial class MainWindow : Window
         _currentShot = shot;
         ShotTitleText.Text = $"步骤 {shot.Ordinal} · {VerdictText(shot.FinalVerdict)}";
         ShotMetaText.Text = $"{RoleText(shot.Role)}  ·  shotIndex={shot.ShotIndex}  ·  {(shot.AtMs ?? 0) / 1000d:0.0}s  ·  差异像素 {shot.Pixel?.ChangedPixels ?? 0:N0}";
+        bool exactMatch = shot.Pixel?.ExactPixelMatch == true;
+        ExactMatchBadge.Visibility = exactMatch ? Visibility.Visible : Visibility.Collapsed;
+        EvidenceModeCombo.Visibility = exactMatch ? Visibility.Collapsed : Visibility.Visible;
+        RegionPanel.Visibility = exactMatch ? Visibility.Collapsed : Visibility.Visible;
         var regions = (shot.Pixel?.Regions ?? []).OrderByDescending(region => region.ChangedPixels).ToList();
         RegionList.ItemsSource = regions;
         RegionList.SelectedIndex = regions.Count > 0 ? 0 : -1;
@@ -155,9 +159,14 @@ public partial class MainWindow : Window
     private void RefreshEvidenceChoices()
     {
         var choices = new List<EvidenceChoice>();
-        if (_currentRegion is not null)
+        if (_currentShot?.Pixel?.ExactPixelMatch == true)
+        {
+            Add("完全一致", _currentShot.ReplayPath);
+        }
+        else if (_currentRegion is not null)
         {
             Add("AI 四宫格", _currentRegion.AiEvidencePath);
+            AddPair("上下对比", _currentShot?.BaselinePath, _currentShot?.ReplayPath);
             Add("差异叠加", _currentRegion.OverlayCropPath);
             Add("基准区域", _currentRegion.BaselineCropPath);
             Add("回放区域", _currentRegion.ReplayCropPath);
@@ -166,6 +175,7 @@ public partial class MainWindow : Window
         else if (_currentShot is not null)
         {
             Add("差异叠加", _currentShot.OverlayPath);
+            AddPair("上下对比", _currentShot.BaselinePath, _currentShot.ReplayPath);
             Add("基准全图", _currentShot.BaselinePath);
             Add("回放全图", _currentShot.ReplayPath);
             Add("差异全图", _currentShot.DiffPath);
@@ -180,23 +190,35 @@ public partial class MainWindow : Window
         {
             if (!string.IsNullOrWhiteSpace(path)) choices.Add(new EvidenceChoice(label, path));
         }
+
+        void AddPair(string label, string? baselinePath, string? replayPath)
+        {
+            if (!string.IsNullOrWhiteSpace(baselinePath) && !string.IsNullOrWhiteSpace(replayPath))
+                choices.Add(new EvidenceChoice(label, baselinePath, replayPath));
+        }
     }
 
     private void EvidenceModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        ShowEvidence((EvidenceModeCombo.SelectedItem as EvidenceChoice)?.Path);
+        ShowEvidence(EvidenceModeCombo.SelectedItem as EvidenceChoice);
 
-    private void ShowEvidence(string? path)
+    private void ShowEvidence(EvidenceChoice? choice)
     {
-        _currentEvidencePath = path;
-        EvidencePathText.Text = path ?? "";
+        string? path = choice?.Path;
+        string? secondaryPath = choice?.SecondaryPath;
+        _currentEvidencePath = secondaryPath ?? path;
+        EvidencePathText.Text = secondaryPath is null ? path ?? "" : $"{path}  ↕  {secondaryPath}";
         EvidenceImage.Source = null;
+        BaselineComparisonImage.Source = null;
+        ReplayComparisonImage.Source = null;
+        EvidenceImage.Visibility = Visibility.Visible;
+        VerticalComparisonGrid.Visibility = Visibility.Collapsed;
         if (string.IsNullOrWhiteSpace(path))
         {
             ImageEmptyText.Text = "没有可显示的证据图";
             ImageEmptyText.Visibility = Visibility.Visible;
             return;
         }
-        if (!File.Exists(path))
+        if (!File.Exists(path) || secondaryPath is not null && !File.Exists(secondaryPath))
         {
             ImageEmptyText.Text = "证据图不存在";
             ImageEmptyText.Visibility = Visibility.Visible;
@@ -204,14 +226,17 @@ public partial class MainWindow : Window
         }
         try
         {
-            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.StreamSource = stream;
-            image.EndInit();
-            image.Freeze();
-            EvidenceImage.Source = image;
+            if (secondaryPath is null)
+            {
+                EvidenceImage.Source = LoadBitmap(path);
+            }
+            else
+            {
+                BaselineComparisonImage.Source = LoadBitmap(path);
+                ReplayComparisonImage.Source = LoadBitmap(secondaryPath);
+                EvidenceImage.Visibility = Visibility.Collapsed;
+                VerticalComparisonGrid.Visibility = Visibility.Visible;
+            }
             ImageEmptyText.Visibility = Visibility.Collapsed;
         }
         catch (Exception ex)
@@ -219,6 +244,18 @@ public partial class MainWindow : Window
             ImageEmptyText.Text = $"图片无法读取：{ex.Message}";
             ImageEmptyText.Visibility = Visibility.Visible;
         }
+    }
+
+    private static BitmapImage LoadBitmap(string path)
+    {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = stream;
+        image.EndInit();
+        image.Freeze();
+        return image;
     }
 
     private void RefreshAiPanel()
@@ -280,6 +317,9 @@ public partial class MainWindow : Window
         _currentRegion = null;
         RegionList.ItemsSource = null;
         EvidenceModeCombo.ItemsSource = null;
+        ExactMatchBadge.Visibility = Visibility.Collapsed;
+        EvidenceModeCombo.Visibility = Visibility.Visible;
+        RegionPanel.Visibility = Visibility.Visible;
         ShowEvidence(null);
         AiPanel.Visibility = Visibility.Collapsed;
         ErrorPanel.Visibility = Visibility.Collapsed;
@@ -322,5 +362,5 @@ public partial class MainWindow : Window
         return null;
     }
 
-    private sealed record EvidenceChoice(string Label, string Path);
+    private sealed record EvidenceChoice(string Label, string Path, string? SecondaryPath = null);
 }
