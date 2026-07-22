@@ -23,8 +23,8 @@ public sealed class PixelConfig
 
 public sealed class HotkeyConfig
 {
-    public string StartStop { get; set; } = "Ctrl+Alt+R";
-    public string Screenshot { get; set; } = "Ctrl+Alt+S";
+    public string StartStop { get; set; } = "F12";
+    public string Screenshot { get; set; } = "F10";
 }
 
 public sealed class ThresholdConfig

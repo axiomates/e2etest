@@ -65,6 +65,9 @@ partial class Recorder
         else if (vk == _stopKey.Vk && mods == _stopKey.Mods) hit = _stopKey;
         if (hit is null) return false;
 
+        // 吞掉主键自身的抬起（单键热键如 F10 也需要，否则 ^F10 会漏进时间轴）。
+        _swallowUp.Add(vk);
+
         // 回撤已记录的、属于该热键的按住修饰键 down 事件，并吞掉其抬起。
         foreach (var (mvk, downEv) in _heldMods.ToArray())
         {

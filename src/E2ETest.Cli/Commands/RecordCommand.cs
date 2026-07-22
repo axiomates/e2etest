@@ -40,9 +40,19 @@ public static class RecordCommand
         Console.WriteLine($"  停止热键: {config.Hotkeys.StartStop}");
         Console.WriteLine($"  全屏模式: {fullscreen}");
         Console.WriteLine($"  裁剪区域: {capture.CropRect.X},{capture.CropRect.Y} {capture.CropRect.Width}x{capture.CropRect.Height}");
+        Console.WriteLine("录制中... 控制台将隐藏，屏幕仅保留托盘图标。按停止热键结束。");
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new RecordSession(repo, sampleId, displayName, capture, screenshotKey, stopKey));
+        // 隐藏控制台窗口，避免它出现在截图里；结束后恢复以打印保存结果。
+        E2ETest.Core.Native.ConsoleWindow.Hide();
+        try
+        {
+            Application.Run(new RecordSession(repo, sampleId, displayName, capture, screenshotKey, stopKey));
+        }
+        finally
+        {
+            E2ETest.Core.Native.ConsoleWindow.Show();
+        }
         return 0;
     }
 }

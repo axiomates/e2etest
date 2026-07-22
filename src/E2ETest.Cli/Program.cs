@@ -53,8 +53,8 @@ static void PrintUsage()
     (replay / compare / run 子命令后续实现)
 
     配置文件: <root>/config.json
-      hotkeys.screenshot  截图热键，默认 Ctrl+Alt+S（防止和软件冲突可修改）
-      hotkeys.startStop   停止录制热键，默认 Ctrl+Alt+R
+      hotkeys.screenshot  截图热键，默认 F10（防止和软件冲突可修改）
+      hotkeys.startStop   停止录制热键，默认 F12
       record.fullscreen   默认截图模式，false=裁掉任务栏，true=全屏
     """);
 }

@@ -30,8 +30,8 @@ public static class ConfigCommand
         ConfigStore.Save(repo.ConfigPath, new AppConfig());
         Console.WriteLine($"已生成默认配置: {repo.ConfigPath}");
         Console.WriteLine("可编辑以下字段来避免热键冲突:");
-        Console.WriteLine("  hotkeys.screenshot  (默认 Ctrl+Alt+S)");
-        Console.WriteLine("  hotkeys.startStop   (默认 Ctrl+Alt+R)");
+        Console.WriteLine("  hotkeys.screenshot  (默认 F10)");
+        Console.WriteLine("  hotkeys.startStop   (默认 F12)");
         Console.WriteLine("  record.fullscreen   (默认 false)");
         return 0;
     }
