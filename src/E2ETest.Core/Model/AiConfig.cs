@@ -17,8 +17,17 @@ public sealed class AiConfig
 
 public sealed class PixelConfig
 {
-    /// <summary>本地像素对比的缩放系数(0,1]。</summary>
-    public double ScaleFactor { get; set; } = 0.5;
+    /// <summary>RGB 任一通道不超过此差值时视为渲染噪声。</summary>
+    public int ColorTolerance { get; set; } = 12;
+
+    /// <summary>小于该像素数的差异连通区域视为孤立噪声。</summary>
+    public int MinRegionPixels { get; set; } = 9;
+
+    /// <summary>超过该差异比例时本地直接判定失败。</summary>
+    public double FailChangedPixelRatio { get; set; } = 0.01;
+
+    /// <summary>单个差异区域超过该像素数时本地直接判定失败。</summary>
+    public int FailLargestRegionPixels { get; set; } = 2500;
 }
 
 public sealed class HotkeyConfig

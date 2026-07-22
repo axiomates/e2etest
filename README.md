@@ -110,6 +110,7 @@ CLI 默认使用当前工作目录作为数据根目录，也可以通过 `--roo
 ```text
 e2etest record
 e2etest replay
+e2etest compare
 e2etest testcase list
 e2etest testcase delete
 e2etest config init
@@ -300,6 +301,29 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 ```
 
 `beforeRound` 失败时整轮不会执行测试用例；`beforeTestCase` 失败时当前用例不会回放。任意 hook 返回非零退出码、启动失败或超时都会记为失败。超时后工具会尝试终止该命令启动的进程树；若进程树无法终止，为避免污染后续用例，会取消本轮剩余回放。
+
+## 本地像素对比
+
+```powershell
+.\e2etest.exe compare --round <roundId> [--name <测试用例名称>] [--root <目录>]
+```
+
+`compare` 读取已有的 `replays/<roundId>/`，不重新执行输入回放。结果写入 `reports/<roundId>/result.json`；每张截图还会生成 `diff-shot-xxxx.png`（仅显示差异）和 `overlay-shot-xxxx.png`（在 replay 图上标红差异）。
+
+本地比较始终使用原始 PNG 尺寸，不会缩放；两图尺寸不一致直接失败。它以 `pixel.colorTolerance` 过滤抗锯齿等细小渲染噪声，以 `pixel.minRegionPixels` 忽略极小孤立区域，并记录差异区域、差异像素数及比例。明显的大区域或高比例差异判为 `failed`；较小但真实的差异判为 `uncertain`，为后续 AI 复核保留证据。`--name` 指定的用例不在该 round 时记为 `skipped`，不会被视为失败。
+
+默认阈值可在 `config.json` 的 `pixel` 中调整：
+
+```json
+{
+  "pixel": {
+    "colorTolerance": 12,
+    "minRegionPixels": 9,
+    "failChangedPixelRatio": 0.01,
+    "failLargestRegionPixels": 2500
+  }
+}
+```
 
 ## 退出码
 

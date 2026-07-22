@@ -22,6 +22,7 @@ try
     {
         "record" => RecordCommand.Run(rest),
         "replay" => ReplayCommand.Run(rest),
+        "compare" => CompareCommand.Run(rest),
         "testcase" => TestCaseCommand.Run(rest),
         "config" => ConfigCommand.Run(rest),
         "help" or "-h" or "--help" => Help(),
@@ -61,6 +62,9 @@ static void PrintUsage()
 
       e2etest replay [--name <名称>] [--round <id>] [--root <dir>]
           回放全部或指定测试用例；单条失败不影响后续用例
+
+      e2etest compare --round <id> [--name <名称>] [--root <dir>]
+          对已有回放轮次执行本地像素对比
 
       e2etest testcase list [--root <dir>]
           列出测试用例
