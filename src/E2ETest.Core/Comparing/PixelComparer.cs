@@ -25,6 +25,7 @@ public sealed class PixelComparer
         var diffs = new byte[length];
         ComparePixels(baseline, replay, settings.ColorTolerance, changed, diffs);
         List<PixelRegion> regions = FindRegions(changed, width, height, settings.MinRegionPixels, out bool[] retained);
+        regions = MergeEvidenceRegions(regions, width, height, settings.RegionPaddingPixels);
         int changedPixels = retained.Count(value => value);
         int largest = regions.Count == 0 ? 0 : regions.Max(region => region.ChangedPixels);
         string status = changedPixels == 0 ? "passed" :
@@ -125,6 +126,49 @@ public sealed class PixelComparer
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// 像素连通域会将同一行中的文字拆成很多碎块。以导出上下文时使用的 padding 扩张后，
+    /// 相交的区域视为一组证据，避免为同一 UI 区块输出几十张裁剪图。
+    /// </summary>
+    private static List<PixelRegion> MergeEvidenceRegions(List<PixelRegion> source, int width, int height, int padding)
+    {
+        var groups = source.Select(region => new List<PixelRegion> { region }).ToList();
+        bool merged;
+        do
+        {
+            merged = false;
+            for (int first = 0; first < groups.Count && !merged; first++)
+            {
+                for (int second = first + 1; second < groups.Count; second++)
+                {
+                    if (!ContextRect(groups[first], width, height, padding).IntersectsWith(ContextRect(groups[second], width, height, padding)))
+                        continue;
+                    groups[first].AddRange(groups[second]);
+                    groups.RemoveAt(second);
+                    merged = true;
+                    break;
+                }
+            }
+        } while (merged);
+
+        return groups.Select(group => new PixelRegion
+        {
+            X = group.Min(item => item.X),
+            Y = group.Min(item => item.Y),
+            Width = group.Max(item => item.X + item.Width) - group.Min(item => item.X),
+            Height = group.Max(item => item.Y + item.Height) - group.Min(item => item.Y),
+            ChangedPixels = group.Sum(item => item.ChangedPixels),
+        }).ToList();
+    }
+
+    private static Rectangle ContextRect(IEnumerable<PixelRegion> regions, int width, int height, int padding)
+    {
+        int left = regions.Min(item => item.X), top = regions.Min(item => item.Y);
+        int right = regions.Max(item => item.X + item.Width), bottom = regions.Max(item => item.Y + item.Height);
+        return Rectangle.FromLTRB(Math.Max(0, left - padding), Math.Max(0, top - padding),
+            Math.Min(width, right + padding), Math.Min(height, bottom + padding));
     }
 
     private static unsafe void RenderArtifacts(Bitmap replay, bool[] retained, byte[] diffs, Bitmap diff, Bitmap overlay)

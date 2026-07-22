@@ -43,6 +43,25 @@ public sealed class PixelComparerTests : IDisposable
         Assert.True(File.Exists(region.OverlayCropPath));
     }
 
+    [Fact]
+    public void NearbyPixelRegionsAreMergedIntoOneEvidenceRegion()
+    {
+        string baseline = CreateImage("baseline.png", Color.White);
+        string replay = CreateImage("replay.png", Color.White, graphics =>
+        {
+            graphics.FillRectangle(Brushes.Black, 1, 1, 6, 3);
+            graphics.FillRectangle(Brushes.Black, 1, 7, 6, 3);
+        });
+        var result = new PixelComparer().Compare(baseline, replay, _dir, 1, new PixelConfig
+        {
+            MinRegionPixels = 1, RegionPaddingPixels = 4, FailLargestRegionPixels = 100, FailChangedPixelRatio = 1,
+        });
+
+        Assert.Equal("uncertain", result.Status);
+        Assert.Single(result.Pixel!.Regions);
+        Assert.Equal(36, result.Pixel.Regions[0].ChangedPixels);
+    }
+
     private string CreateImage(string name, Color color, Action<Graphics>? draw = null)
     {
         Directory.CreateDirectory(_dir);
