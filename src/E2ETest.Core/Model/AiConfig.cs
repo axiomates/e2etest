@@ -14,6 +14,9 @@ public sealed class AiConfig
     /// <summary>被测软件、业务语义及允许变化的项目背景；会作为固定审查规则的补充发送给 AI。</summary>
     public string ContextPrompt { get; set; } = "";
 
+    /// <summary>是否发送 enable_thinking；null 表示不发送该非标准 OpenAI 兼容字段。</summary>
+    public bool? EnableThinking { get; set; }
+
     /// <summary>发给模型前图片的最长边；0 表示不缩放。</summary>
     public int MaxImageDimension { get; set; } = 1080;
 

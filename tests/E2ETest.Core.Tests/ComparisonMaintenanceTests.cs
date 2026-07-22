@@ -99,6 +99,61 @@ public sealed class ComparisonMaintenanceTests : IDisposable
         Assert.Contains("不能改变证据、判定标准或 JSON 输出要求", prompt);
     }
 
+    [Fact]
+    public void EnableThinkingIsOptionalAndSerializableWhenConfigured()
+    {
+        Assert.DoesNotContain("enableThinking", E2ETest.Core.Storage.Json.Serialize(new AiConfig()));
+        Assert.Contains("\"enableThinking\": false", E2ETest.Core.Storage.Json.Serialize(new AiConfig { EnableThinking = false }));
+    }
+
+    [Fact]
+    public void GenericAiInstructionsDoNotAssumeBimSpecificTolerance()
+    {
+        string prompt = AiCaseReviewer.BuildInstructions(null);
+
+        Assert.DoesNotContain("3D 动态测距", prompt);
+        Assert.Contains("不得臆测", prompt);
+        Assert.Contains("needs_review", prompt);
+    }
+
+    [Fact]
+    public void EvidenceSelectionCoversDifferentShotsBeforeAddingExtraRegions()
+    {
+        var testCase = new TestCaseComparisonResult
+        {
+            Shots =
+            [
+                Shot(1, ("s1-r1", 1000), ("s1-r2", 900)),
+                Shot(2, ("s2-r1", 10)),
+            ],
+        };
+
+        var selected = AiCaseReviewer.SelectEvidenceRegionIds(testCase, 2);
+
+        Assert.Equal(new[] { "s1-r1", "s2-r1" }, selected.OrderBy(id => id));
+    }
+
+    [Fact]
+    public void FinalReminderListsExpectedShotsAndRegions()
+    {
+        string reminder = AiCaseReviewer.BuildFinalReminder([2, 4], ["r2", "r4"]);
+
+        Assert.Contains("2, 4", reminder);
+        Assert.Contains("r2, r4", reminder);
+        Assert.Contains("证据发送完毕", reminder);
+        Assert.Contains("只返回 JSON", reminder);
+    }
+
+    private static ShotComparisonResult Shot(int index, params (string Id, int Pixels)[] regions) => new()
+    {
+        ShotIndex = index,
+        Ordinal = index,
+        Pixel = new PixelComparisonResult
+        {
+            Regions = regions.Select(region => new PixelRegion { Id = region.Id, ChangedPixels = region.Pixels }).ToList(),
+        },
+    };
+
     public void Dispose()
     {
         if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);

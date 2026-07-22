@@ -7,6 +7,7 @@ public static class RunCommand
 {
     public static int Run(CliArgs args)
     {
+        args.Validate(["round", "name", "root"], ["ai"]);
         string roundId = SafeId.Validate(args.Get("round") ?? ReplayCommand.CreateRoundId(), "round");
         var replayArgs = Forward(args, roundId, includeAi: false);
         Console.WriteLine($"执行测试: 轮次 {roundId}，阶段 1/2 回放。");

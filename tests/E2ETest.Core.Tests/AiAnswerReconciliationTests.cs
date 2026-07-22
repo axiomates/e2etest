@@ -76,6 +76,33 @@ public sealed class AiAnswerReconciliationTests
         Assert.Equal("not_requested", testCase.Shots[0].Pixel!.Regions[1].Ai.Status);
     }
 
+    [Fact]
+    public void PassWithoutRequiredObservationAndReasonBecomesNeedsReview()
+    {
+        var testCase = Case("r1");
+        using var answer = Answer("""
+        {"verdict":"passed","confidence":0.9,"observation":"","reason":"","shots":[{"shotIndex":1,"verdict":"passed","observation":"","reason":""}],"regions":[{"id":"r1","verdict":"passed","observation":"","reason":""}]}
+        """);
+
+        AiCaseReviewer.ApplyAnswer(testCase, ["r1"], answer.RootElement);
+
+        Assert.Equal("needs_review", testCase.FinalVerdict);
+        Assert.Contains("observation", testCase.Ai.Reason);
+    }
+
+    [Fact]
+    public void CompletePassWithValidConfidenceRemainsPassed()
+    {
+        var testCase = Case("r1");
+        using var answer = Answer("""
+        {"verdict":"passed","confidence":0.9,"observation":"界面文字发生变化。","reason":"项目背景明确允许该动态文字。","shots":[{"shotIndex":1,"verdict":"passed","observation":"文字发生变化。","reason":"该变化被项目背景允许。"}],"regions":[{"id":"r1","verdict":"passed","observation":"局部文字不同。","reason":"属于允许的动态内容。"}]}
+        """);
+
+        AiCaseReviewer.ApplyAnswer(testCase, ["r1"], answer.RootElement);
+
+        Assert.Equal("passed", testCase.FinalVerdict);
+    }
+
     private static TestCaseComparisonResult Case(params string[] regionIds)
     {
         var regions = regionIds.Select((id, index) => new PixelRegion

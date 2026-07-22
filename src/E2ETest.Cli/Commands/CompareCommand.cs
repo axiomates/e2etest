@@ -17,6 +17,7 @@ public static class CompareCommand
 
     private static int RunCore(CliArgs args, CancellationToken cancellationToken)
     {
+        args.Validate(["round", "name", "root"], ["ai"]);
         string? requestedRound = args.Get("round");
         if (string.IsNullOrWhiteSpace(requestedRound)) throw new ArgumentException("compare 必须指定 --round <roundId>。");
         string roundId = SafeId.Validate(requestedRound, "round");
