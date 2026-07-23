@@ -82,3 +82,10 @@ if (-not (Test-Path $viewerExe)) {
 $viewerHash = (Get-FileHash -LiteralPath $viewerExe -Algorithm SHA256).Hash
 Write-Host "报告查看器发布完成: $viewerExe"
 Write-Host "报告查看器 SHA256: $viewerHash"
+
+$localConfig = Join-Path $root "config.json"
+if (Test-Path -LiteralPath $localConfig) {
+    $publishedConfig = Join-Path $output "config.json"
+    Copy-Item -LiteralPath $localConfig -Destination $publishedConfig -Force
+    Write-Host "已复制本地配置（不纳入 Git）: $publishedConfig"
+}
