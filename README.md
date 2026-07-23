@@ -320,7 +320,34 @@ logs\e2etest-YYYYMMDD.log
 
 `list` 每行输出一个测试用例名称。`delete` 的 `--name` 为必需参数；缺少名称或目标不存在时返回退出码 2。
 
-录制完成后，QA 可以选择用 `annotate` 为当前样例补充 AI 审查指引，无需重新录制：
+### 直接编辑样例 AI 指引（常见方式）
+
+录制完成后，QA 直接编辑 testcase 的 `manifest.json` 是常见且正式支持的工作流，无需重新录制。文件位置为：
+
+```text
+<数据根目录>\<paths.testcases>\<测试用例名称>\manifest.json
+```
+
+默认配置下，例如样例名为“创建立柱”，路径是 `testcases\创建立柱\manifest.json`。在 JSON 顶层加入或修改下面两个可选字段；这是字段示意，不要用它替换原 manifest 中的 `schemaVersion`、时间线、截图和回放字段：
+
+```json
+{
+  "testFocus": "重点检查立柱是否在目标楼层成功创建，以及流程末尾是否出现错误提示。",
+  "acceptanceCriteria": "立柱可见、属性与目标一致且没有错误提示时通过；立柱缺失或出现错误提示时失败；仅凭截图无法确认属性时待人工确认。"
+}
+```
+
+`testFocus` 是希望 AI 优先观察的测试重点，`acceptanceCriteria` 是该样例自己的通过、失败和待确认标准。两项均可单独存在；字段缺失、值为 `null` 或内容只有空白时，对应内容不会进入 AI prompt。每项最多 4000 字符。不需要修改 `schemaVersion`。
+
+手动编辑时应遵守以下约束：
+
+- 确保该样例没有正在执行 record、replay、compare 或 `run`；保存完成后再执行相关命令；
+- 保持文件为合法 JSON；字段之间需要逗号，文本中的双引号、反斜杠和换行必须按 JSON 规则转义；
+- 不要修改 `name`、`shots`、`events`、`capture` 等录制结构，除非明确了解 manifest 校验规则；
+- 修改只影响后续 compare；已经生成的报告和 AI 结论不会自动变化，需要重新执行对应 round 的 compare；
+- 可以在 replay 完成后、compare 开始前补充指引，因为指引不改变截图和回放时间线。
+
+如果希望工具负责测试用例锁、原子写入和 manifest 校验，可以使用等价的 `annotate` 命令：
 
 ```powershell
 .\e2etest.exe testcase annotate --name "创建立柱" `
@@ -328,7 +355,7 @@ logs\e2etest-YYYYMMDD.log
   --criteria "立柱可见、属性与目标一致且没有错误提示时通过；立柱缺失或出现错误提示时失败；仅凭截图无法确认属性时待人工确认。"
 ```
 
-`--focus` 是希望 AI 优先观察的测试重点，`--criteria` 是该样例自己的通过、失败和待确认标准；至少提供其中一项，未提供的另一项保持原值。再次执行可单独修改某一项。每项最多 4000 字符，保存在该 testcase 的 `manifest.json`，并由 compare 复制到最终报告。它们只影响当前样例，和 `ai.contextPrompt` 的全局软件背景互补；无论 compare 是否使用 `--ai`，报告结构都会保留这两项。使用 `--ai` 时，prompt 要求模型优先围绕这些指引观察和解释，但不得用文字指引覆盖图像事实或臆测未附图内容。
+命令至少需要 `--focus` 或 `--criteria` 中的一项，未提供的另一项保持原值，再次执行可单独修改。manifest 中的 `testFocus` / `acceptanceCriteria` 会由 compare 复制到最终报告。它们只影响当前样例，和 `ai.contextPrompt` 的全局软件背景互补；无论 compare 是否使用 `--ai`，报告结构都会保留这两项。使用 `--ai` 时，prompt 要求模型优先围绕这些指引观察和解释，但不得用文字指引覆盖图像事实或臆测未附图内容。
 
 ## 回放命令
 
