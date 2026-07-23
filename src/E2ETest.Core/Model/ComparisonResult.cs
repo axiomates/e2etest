@@ -16,7 +16,7 @@ public sealed class PixelRegion
     public string? ReplayCropPath { get; set; }
     public string? DiffCropPath { get; set; }
     public string? OverlayCropPath { get; set; }
-    /// <summary>启用 AI 时实际发送的四宫格证据图；同时保留供调试审计。</summary>
+    /// <summary>报告查看器默认显示的四宫格证据图；启用 AI 时可能从中选择并发送。</summary>
     public string? AiEvidencePath { get; set; }
     public AiAssessment Ai { get; set; } = new();
 }
@@ -56,6 +56,8 @@ public sealed class ShotComparisonResult
 public sealed class TestCaseComparisonResult
 {
     public string Name { get; set; } = "";
+    public string? TestFocus { get; set; }
+    public string? AcceptanceCriteria { get; set; }
     public string Status { get; set; } = "pending";
     public string FinalVerdict { get; set; } = "pending";
     /// <summary>对比过程被取消；已完成的本地判定仍保留在 Status/FinalVerdict。</summary>

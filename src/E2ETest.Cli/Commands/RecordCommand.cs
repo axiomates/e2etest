@@ -76,6 +76,7 @@ public static class RecordCommand
             session.EventCount, session.ScreenshotCount, session.DurationMs);
         Console.WriteLine($"录制完成: {session.EventCount} 事件, " +
                           $"{session.ScreenshotCount} 截图, {session.DurationMs}ms");
+        Console.WriteLine($"可选：使用 testcase annotate --name \"{name}\" --focus <测试重点> --criteria <判断标准> 为 AI 补充样例指引。");
         return 0;
     }
 

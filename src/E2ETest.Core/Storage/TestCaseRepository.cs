@@ -193,6 +193,28 @@ public sealed class TestCaseRepository
         return true;
     }
 
+    public TestCaseManifest UpdateAiGuidance(string name, string? testFocus, string? acceptanceCriteria)
+    {
+        name = SafeId.ValidateTestCaseName(name);
+        using var lease = AcquireWriteLease(name);
+        string directory = TestCaseDir(name);
+        string manifestPath = Path.Combine(directory, "manifest.json");
+        if (!File.Exists(manifestPath))
+            throw new DirectoryNotFoundException($"测试用例不存在: {name}");
+        var manifest = Json.Deserialize<TestCaseManifest>(AtomicFile.ReadAllText(manifestPath));
+        if (manifest.Name != name)
+            throw new InvalidDataException("manifest.name 与测试用例目录不一致。");
+        ManifestValidator.Validate(manifest, directory, requireBaselineFiles: true);
+        if (testFocus is not null) manifest.TestFocus = NormalizeGuidance(testFocus);
+        if (acceptanceCriteria is not null) manifest.AcceptanceCriteria = NormalizeGuidance(acceptanceCriteria);
+        ManifestValidator.Validate(manifest, directory, requireBaselineFiles: true);
+        AtomicFile.WriteAllText(manifestPath, Json.Serialize(manifest));
+        return manifest;
+    }
+
+    private static string? NormalizeGuidance(string value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static FileLockLease AcquireExclusiveFileLock(
         string path, string errorMessage)
     {

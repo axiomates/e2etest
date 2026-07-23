@@ -85,6 +85,8 @@ public static class CompareCommand
                 using var snapshot = repo.LoadSnapshotForComparison(replayCase.Name);
                 TestCaseManifest manifest = snapshot.Manifest;
                 caseResult.DurationMs = manifest.DurationMs;
+                caseResult.TestFocus = manifest.TestFocus;
+                caseResult.AcceptanceCriteria = manifest.AcceptanceCriteria;
                 foreach (var replayShot in replayCase.Shots.OrderBy(item => item.ShotIndex))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -122,6 +124,7 @@ public static class CompareCommand
                 foreach (var shot in caseResult.Shots)
                     shot.AtMs = manifest.Shots.FirstOrDefault(item => item.Index == shot.ShotIndex)?.AtMs;
                 IncidentAggregator.Finalize(caseResult, config.Pixel);
+                EvidenceSheetBuilder.GenerateAll(caseResult, caseOutputDir, config.Ai.MaxImageDimension);
                 if (!replayCase.Ok)
                 {
                     caseResult.Status = caseResult.FinalVerdict = "failed";

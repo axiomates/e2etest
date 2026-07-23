@@ -219,9 +219,9 @@ public partial class MainWindow : Window
         else if (_currentRegion is not null)
         {
             Add("四宫格", _currentRegion.AiEvidencePath);
-            AddPair("左右对比", _currentShot?.BaselinePath, _currentShot?.ReplayPath);
             Add("差异叠加", _currentRegion.OverlayCropPath);
             Add("差异区域", _currentRegion.DiffCropPath);
+            AddPair("左右对比", _currentShot?.BaselinePath, _currentShot?.ReplayPath);
             Add("基准区域", _currentRegion.BaselineCropPath);
             Add("回放区域", _currentRegion.ReplayCropPath);
         }
@@ -262,7 +262,7 @@ public partial class MainWindow : Window
         string? path = choice?.Path;
         string? secondaryPath = choice?.SecondaryPath;
         _currentEvidencePath = secondaryPath ?? path;
-        EvidencePathText.Text = secondaryPath is null ? path ?? "" : $"{path}  ↕  {secondaryPath}";
+        EvidencePathText.Text = secondaryPath is null ? path ?? "" : $"{path}  ↔  {secondaryPath}";
         EvidenceImage.Source = null;
         BaselineComparisonImage.Source = null;
         ReplayComparisonImage.Source = null;

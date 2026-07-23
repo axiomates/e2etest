@@ -25,6 +25,10 @@ public static class ManifestValidator
             throw new InvalidDataException("manifest 缺少必需对象或数组。");
         SafeId.ValidateTestCaseName(manifest.Name);
         if (manifest.DurationMs < 0) throw new InvalidDataException("durationMs 不能为负数。");
+        if (manifest.TestFocus?.Length > 4000)
+            throw new InvalidDataException("testFocus 不能超过 4000 个字符。");
+        if (manifest.AcceptanceCriteria?.Length > 4000)
+            throw new InvalidDataException("acceptanceCriteria 不能超过 4000 个字符。");
         if (!double.IsFinite(manifest.Replay.SpeedFactor) || manifest.Replay.SpeedFactor <= 0)
             throw new InvalidDataException("replay.speedFactor 必须大于 0。");
         if (manifest.Replay.MaxIdleGapMs < 0)

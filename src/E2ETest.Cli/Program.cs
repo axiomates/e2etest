@@ -76,6 +76,9 @@ static void PrintUsage()
       e2etest testcase delete --name <名称> [--root <dir>]
           删除测试用例
 
+      e2etest testcase annotate --name <名称> [--focus <测试重点>] [--criteria <判断标准>] [--root <dir>]
+          录制后为当前样例补充或修改可选的 AI 审查指引
+
       e2etest config init | show [--root <dir>]
           生成或显示 config.json
 

@@ -104,6 +104,20 @@ public sealed class RepositoryTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_root, "custom-cases", "case-1", "manifest.json")));
     }
 
+    [Fact]
+    public void AiGuidanceCanBeAddedAfterRecordingAndUpdatedIndependently()
+    {
+        var repo = new TestCaseRepository(_root);
+        Commit(repo, "case-1", Color.Black);
+
+        repo.UpdateAiGuidance("case-1", "关注立柱是否创建。", null);
+        repo.UpdateAiGuidance("case-1", null, "立柱可见且无错误提示才通过。");
+
+        using var snapshot = repo.LoadSnapshot("case-1");
+        Assert.Equal("关注立柱是否创建。", snapshot.Manifest.TestFocus);
+        Assert.Equal("立柱可见且无错误提示才通过。", snapshot.Manifest.AcceptanceCriteria);
+    }
+
     private static void Commit(TestCaseRepository repo, string name, Color color)
     {
         using var lease = repo.AcquireWriteLease(name);

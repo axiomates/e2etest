@@ -143,6 +143,16 @@ public sealed class ManifestTests : IDisposable
         Assert.Equal(0, new ReplaySettings().MaxIdleGapMs);
     }
 
+    [Fact]
+    public void RejectsExcessivelyLongCaseSpecificAiGuidance()
+    {
+        var manifest = CreateValidManifest();
+        manifest.TestFocus = new string('x', 4001);
+
+        Assert.Throws<InvalidDataException>(() =>
+            ManifestValidator.Validate(manifest, _testCaseDir, requireBaselineFiles: true));
+    }
+
     private TestCaseManifest CreateValidManifest()
     {
         string baseline = Path.Combine(_testCaseDir, "baseline");

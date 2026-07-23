@@ -6,7 +6,7 @@ public static class ReportArtifactCleaner
 {
     private static readonly string[] Patterns =
     [
-        "diff-shot-*.png", "overlay-shot-*.png", "shot-*-region-*.png", "ai-shot-*.png", "ai-timeline.png",
+        "diff-shot-*.png", "overlay-shot-*.png", "shot-*-region-*.png", "evidence-shot-*.png", "ai-shot-*.png", "ai-timeline.png",
     ];
 
     public static void Clean(string caseDirectory, TestCaseComparisonResult result)

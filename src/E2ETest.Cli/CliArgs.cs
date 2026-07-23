@@ -32,7 +32,7 @@ public sealed class CliArgs
     public string? Get(string key) => _values.TryGetValue(key, out var v) ? v : null;
     public bool Has(string key) => _values.ContainsKey(key);
 
-    public void Validate(IEnumerable<string> valueOptions, IEnumerable<string> flagOptions)
+    public void Validate(IEnumerable<string> valueOptions, IEnumerable<string> flagOptions, int maximumPositionals = 0)
     {
         if (_duplicates.Count > 0)
             throw new ArgumentException($"参数重复: --{_duplicates.OrderBy(value => value).First()}");
@@ -47,8 +47,8 @@ public sealed class CliArgs
             if (flags.Contains(pair.Key) && pair.Value is not null)
                 throw new ArgumentException($"开关 --{pair.Key} 不能提供值。");
         }
-        if (_positional.Count > 0)
-            throw new ArgumentException($"不支持位置参数: {_positional[0]}");
+        if (_positional.Count > maximumPositionals)
+            throw new ArgumentException($"不支持位置参数: {_positional[maximumPositionals]}");
     }
 
     /// <summary>第 index 个位置参数（如 config 后的 init/show）。</summary>

@@ -131,6 +131,7 @@ e2etest compare
 e2etest run
 e2etest testcase list
 e2etest testcase delete
+e2etest testcase annotate
 e2etest config init
 e2etest config show
 ```
@@ -231,7 +232,7 @@ e2etest config show
 | `ai.model` | 空 | 服务端模型标识，例如 `Qwen/Qwen3.5-122B-A10B` |
 | `ai.contextPrompt` | 空 | 被测软件、业务含义、允许变化和失败条件等项目背景，会附加到固定审查提示词中 |
 | `ai.enableThinking` | 不发送 | OpenAI 兼容服务的非标准 `enable_thinking` 字段；`true`/`false` 表示显式发送，省略或 `null` 表示不发送 |
-| `ai.maxImageDimension` | `1080` | 发给 AI 前图片的最长边；等比缩放，`0` 表示不缩放；不影响本地原始像素比较 |
+| `ai.maxImageDimension` | `1080` | 报告四宫格及发给 AI 的图片最长边；`0` 表示上传全图不缩放，四宫格仍按 1080 生成；不影响本地原始像素比较 |
 | `ai.maxEvidenceRegions` | `10` | 每个测试用例最多发送的差异区域四宫格数量，按差异像素数从大到小选择 |
 | `ai.maxAttempts` | `3` | 单个测试用例遇到瞬时 AI 请求故障时的最大请求次数 |
 | `ai.retryDelayMs` | `1000` | 第一次 AI 重试前的等待时间；后续指数退避，单次最长 10 秒 |
@@ -311,9 +312,23 @@ logs\e2etest-YYYYMMDD.log
 ```powershell
 .\e2etest.exe testcase list [--root <目录>]
 .\e2etest.exe testcase delete --name "登录流程" [--root <目录>]
+.\e2etest.exe testcase annotate --name "登录流程" `
+  [--focus "测试重点"] `
+  [--criteria "样例判断标准"] `
+  [--root <目录>]
 ```
 
 `list` 每行输出一个测试用例名称。`delete` 的 `--name` 为必需参数；缺少名称或目标不存在时返回退出码 2。
+
+录制完成后，QA 可以选择用 `annotate` 为当前样例补充 AI 审查指引，无需重新录制：
+
+```powershell
+.\e2etest.exe testcase annotate --name "创建立柱" `
+  --focus "重点检查立柱是否在目标楼层成功创建，以及流程末尾是否出现错误提示。" `
+  --criteria "立柱可见、属性与目标一致且没有错误提示时通过；立柱缺失或出现错误提示时失败；仅凭截图无法确认属性时待人工确认。"
+```
+
+`--focus` 是希望 AI 优先观察的测试重点，`--criteria` 是该样例自己的通过、失败和待确认标准；至少提供其中一项，未提供的另一项保持原值。再次执行可单独修改某一项。每项最多 4000 字符，保存在该 testcase 的 `manifest.json`，并由 compare 复制到最终报告。它们只影响当前样例，和 `ai.contextPrompt` 的全局软件背景互补；无论 compare 是否使用 `--ai`，报告结构都会保留这两项。使用 `--ai` 时，prompt 要求模型优先围绕这些指引观察和解释，但不得用文字指引覆盖图像事实或臆测未附图内容。
 
 ## 回放命令
 
@@ -432,7 +447,7 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 - 有风险时默认只列需要关注的 testcase，通过项可切换查看；没有风险时自动显示全部；
 - testcase 按最终结果和 `attentionScore` 排序，默认定位最值得关注的步骤；
 - 步骤按录制时间排列，区域按差异像素数排列；
-- 证据默认显示 AI 实际收到的四宫格，可切换 overlay、baseline、replay 和 diff；
+- 存在局部差异时默认显示该区域的四宫格，可切换差异叠加、差异区域、左右全图对比、baseline 和 replay；
 - AI 的“看到了什么”和“为什么这样判断”与当前步骤/区域放在一起；
 - 单例 `result.json` 会覆盖整轮汇总中的旧副本，因此单独重跑 AI 后查看器能显示最新结论。
 
@@ -444,11 +459,119 @@ Hook 在 `config.json` 的 `replayHooks` 中全局配置，四个命令均可省
 
 报告以测试用例为单位保留完整截图时间线（`first`、`intermediate`、`last` 与 `atMs`），并将相邻截图中位置接近的差异区域聚合为 `incidents`。每个 incident 有本地关注等级 `P1`、`P2` 或 `P3`，用于优先排序；它不替代通过/失败判定。所有 case、截图和区域均固定包含 `ai.status` 字段；未启用 AI 时为 `not_requested`，像素完全一致或硬失败时为 `skipped`。
 
-添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。一次请求覆盖一个完整 testcase：结构化时间线保留全部步骤；每个存在差异的步骤依次附 baseline 全图、replay 全图，以及该步骤的一个或多个 baseline/replay/diff/overlay 四宫格。四宫格会按区域宽高比动态调整整体尺寸，最长边不超过 `maxImageDimension`；四个标题各自位于与画面隔离的标题栏中。prompt 会告诉 AI 标题、边框与留白只是排版，不是产品差异。每个四宫格均附原始图坐标 `rect` 和包含周边上下文的 `contextRect`，所以 AI 能知道它属于第几步、位于屏幕何处，以及同一步的其他差异区域。实际发送的四宫格会保存在 case 报告目录，并通过 region 的 `aiEvidencePath` 写入 `result.json`，方便调试者核对 AI 当时看到的证据；未使用 `--ai` 时不生成这些额外拼图。
+无论是否添加 `--ai`，工具都会为报告中每个已导出的差异区域生成 baseline/replay/diff/overlay 四宫格，并通过 region 的 `aiEvidencePath` 写入 `result.json`；报告查看器默认显示所选区域的四宫格。区域导出数量仍受 `pixel.maxRegions` 控制。添加 `--ai` 后，工具仅将存在真实差异且不是硬失败的 case 发送给已配置的 OpenAI 兼容多模态接口。一次请求覆盖一个完整 testcase：结构化时间线保留全部步骤；每个存在差异的步骤依次附 baseline 全图、replay 全图，以及从报告四宫格中按 `ai.maxEvidenceRegions` 选择的一个或多个证据。四宫格会按区域宽高比动态调整整体尺寸，最长边不超过 `maxImageDimension`；四个标题各自位于与画面隔离的标题栏中。prompt 会告诉 AI 标题、边框与留白只是排版，不是产品差异。每个发送给 AI 的四宫格均附原始图坐标 `rect` 和包含周边上下文的 `contextRect`，所以 AI 能知道它属于第几步、位于屏幕何处，以及同一步的其他差异区域。
 
-本地像素 diff、差异像素计数、区域识别和坐标始终在原始 PNG 尺寸上完成，绝不因 AI 缩放而改变。仅在发送 AI 前，baseline/replay 全图和四宫格才按 `ai.maxImageDimension` 缩放，默认最长边为 1080，保持比例且不放大；设为 `0` 可禁用缩放。`ai.maxEvidenceRegions` 默认每个 testcase 最多附 10 张区域四宫格。工具先为每个有差异的步骤保留最大区域，再以全 testcase 的差异像素数补满剩余名额，避免单个步骤占满全部证据；若差异步骤本身已超过上限，则优先选择步骤最大区域中差异像素较多者。报告与 prompt 会明确列出 rect 差异总数和未附图区域，AI 不得把未附区域视为不存在。
+本地像素 diff、差异像素计数、区域识别和坐标始终在原始 PNG 尺寸上完成，绝不因四宫格或 AI 缩放而改变。报告四宫格按 `ai.maxImageDimension` 生成；发送 AI 前，baseline/replay 全图也按该值缩放，默认最长边为 1080，保持比例且不放大。设为 `0` 时上传全图不缩放，四宫格仍以 1080 为生成预算，避免无界拼图。`ai.maxEvidenceRegions` 默认每个 testcase 最多发送 10 张区域四宫格，但不限制报告在本地生成的四宫格数量。工具先为每个有差异的步骤保留最大区域，再以全 testcase 的差异像素数补满剩余名额，避免单个步骤占满全部 AI 证据；若差异步骤本身已超过上限，则优先选择步骤最大区域中差异像素较多者。报告与 prompt 会明确列出 rect 差异总数和未发送区域，AI 不得把未附区域视为不存在。
 
 AI 同时返回 testcase、步骤和区域三级结果：每层先在 `ai.observation` 客观描述看到了什么，再在 `ai.reason` 说明这些观察为何支持 `ai.verdict`，并填入 `finalVerdict`；本地 `status` 和像素证据始终保留。工具会严格验收三级响应：任一步骤或区域失败会使 testcase 失败，任一待确认会使 testcase 至少待确认；缺少已提交步骤/区域、缺少必需的 observation/reason、testcase confidence 不在 0～1，或仍有区域未附图时，不允许从本地失败自动改判为通过。prompt 还会明确禁止描述未附图步骤的具体 UI、臆测测试脚本意图，并在全部图片之后再次列出必须覆盖的步骤和区域，要求综合整个 testcase 输出 JSON。
+
+### AI prompt 拼装流水线
+
+AI 复核以一个完整 testcase 为一次请求。代码不会拼出一段不可区分来源的长字符串，而是按下表生成有序的文本与图片 part，依次写入 OpenAI Chat Completions 的一个 `user` 消息中：
+
+| 顺序 | 内部阶段名 | 来源 | 何时加入 | 发给 AI 的内容 |
+| --- | --- | --- | --- | --- |
+| 1 | `fixed_rules` | 工具内置 | 始终 | baseline/replay 定义、四宫格布局、观察后判断、`passed/failed/needs_review` 规则和 JSON 输出结构 |
+| 2 | `project_context` | `config.json` 的 `ai.contextPrompt` | 内容非空时 | 被测软件背景、业务术语、全项目允许变化和失败条件；用 `<project-context>` 明确隔离 |
+| 3 | `testcase_guidance` | testcase `manifest.json` 的 `testFocus`、`acceptanceCriteria` | 至少一项非空时 | 当前样例的测试重点和判断标准；用 `<testcase-guidance>` 隔离，只输出实际存在的项 |
+| 4 | `timeline_metadata` | 本地 compare 结果 | 始终 | case 名称、步骤顺序与角色、时间、像素结论、所有已导出 rect、证据选择和省略统计 |
+| 5 | `shot_header` + 图片 | baseline、replay、报告证据 | 每个被选中且有差异的步骤 | 步骤说明，随后严格按 baseline 全图、replay 全图、区域 metadata、区域四宫格的顺序重复 |
+| 6 | `final_contract` | 工具内置 | 始终 | 再次列出必须返回判断的 shotIndex 和 region ID，要求综合完整 testcase、先 observation 后 reason、只返回 JSON |
+
+下面是等价的逻辑模板，用来展示一次请求的实际拼装形状。`{{...}}` 是运行时占位符，`{{#if ...}}` / `{{/if}}` 表示可选条件，`{{#each ...}}` 表示按顺序重复；`<image: ...>` 代表一个 OpenAI `image_url` part，而不是发送这段文字：
+
+```text
+[fixed_rules / text]
+你是 Windows 桌面软件端到端测试审查员……
+baseline 是预期，replay 是实际……
+先写 observation，再写 reason，最后输出规定的 JSON……
+
+{{#if ai.contextPrompt}}
+[project_context / text]
+<project-context>
+{{ai.contextPrompt}}
+</project-context>
+{{/if}}
+
+{{#if testCase.testFocus OR testCase.acceptanceCriteria}}
+[testcase_guidance / text]
+<testcase-guidance>
+{{#if testCase.testFocus}}测试重点：{{testCase.testFocus}}{{/if}}
+{{#if testCase.acceptanceCriteria}}样例判断标准：{{testCase.acceptanceCriteria}}{{/if}}
+</testcase-guidance>
+{{/if}}
+
+[timeline_metadata / text]
+{
+  "testCase": {
+    "name": "{{testCase.name}}",
+    "totalShots": {{testCase.totalShots}},
+    "durationMs": {{testCase.durationMs}},
+    "localVerdict": "{{testCase.status}}"
+  },
+  "timeline": [
+    {
+      "shotIndex": {{shot.shotIndex}},
+      "ordinal": {{shot.ordinal}},
+      "role": "{{first|intermediate|last}}",
+      "atMs": {{shot.atMs}},
+      "localVerdict": "{{shot.status}}",
+      "exactPixelMatch": {{true|false}},
+      "changedPixels": {{shot.changedPixels}},
+      "regions": [
+        {
+          "id": "{{region.id}}",
+          "rect": { "x": {{x}}, "y": {{y}}, "width": {{width}}, "height": {{height}} },
+          "contextRect": { "x": {{contextX}}, "y": {{contextY}}, "width": {{contextWidth}}, "height": {{contextHeight}} },
+          "changedPixels": {{region.changedPixels}}
+        }
+      ]
+    }
+  ],
+  "totalDetectedRegionCount": {{全部检测区域数}},
+  "attachedEvidenceRegionCount": {{实际发送四宫格数}},
+  "attachedRegionIds": [{{已发送 region ID}}],
+  "omittedRegionIds": [{{未发送 region ID}}]
+}
+
+{{#each selectedShot in chronologicalOrder}}
+[shot_header / text]
+步骤 {{selectedShot.ordinal}}/{{testCase.totalShots}}
+（shotIndex={{selectedShot.shotIndex}}，role={{selectedShot.role}}，atMs={{selectedShot.atMs}}）：
+以下依次为 baseline 全图、replay 全图，以及 {{selectedShot.selectedRegionCount}} 个区域四宫格。
+
+[baseline_full / image]
+<image: {{selectedShot.baselinePath}}，最长边限制 {{ai.maxImageDimension}}>
+
+[replay_full / image]
+<image: {{selectedShot.replayPath}}，最长边限制 {{ai.maxImageDimension}}>
+
+{{#each selectedRegion in changedPixelsOrder}}
+[region_metadata / text]
+区域 {{selectedRegion.id}}：
+rect=({{x}},{{y}},{{width}},{{height}})，
+contextRect=({{contextX}},{{contextY}},{{contextWidth}},{{contextHeight}})，
+changedPixels={{selectedRegion.changedPixels}}。
+
+[region_evidence / image]
+<image: {{selectedRegion.aiEvidencePath}} 四宫格>
+{{/each}}
+{{/each}}
+
+[final_contract / text]
+证据发送完毕。shots 必须覆盖 {{attachedShotIndexes}}；
+regions 必须覆盖 {{attachedRegionIds}}；
+请综合整个 testcase，先写客观 observation，再写 reason，最后给 verdict；
+只返回规定结构的 JSON，不要 Markdown。
+```
+
+例如一个 case 有 5 个时间线步骤，但只有步骤 2 存在两个被选中的差异区域，那么 `timeline_metadata` 仍列出 5 步，图片段只会出现一次步骤 2 的 baseline 全图、一次 replay 全图和两张四宫格；不会为其余 4 个完全一致步骤发送图片。
+
+可选阶段采用“整段省略”，不是传空值：`contextPrompt` 为空时没有 `project_context` part；样例重点和判断标准都为空时没有 `testcase_guidance` part；只填写其中一项时只发送该项，另一项不会以 `null`、空字符串、“未设置”或空标签出现在 prompt 中。
+
+像素完全一致的步骤保留在 `timeline_metadata`，但不发送图片；真正有差异且可供 AI 判断的步骤，每步发送两张限尺寸全图和选中的 N 张四宫格。报告会为所有已导出区域生成四宫格，但 AI 只接收 `ai.maxEvidenceRegions` 策略选中的部分；metadata 会明确告诉模型总区域数、已发送 ID 和未发送 ID。四宫格已经包含 baseline/replay/diff/overlay，因此不会再把四张局部裁剪图分别上传。
+
+API key、base URL、重试次数、超时时间、报告本地路径和未被选择的图片二进制不会写进 prompt。`enable_thinking`、模型名和采样参数属于 HTTP 请求字段，也不属于审查文字。AI 返回后仍要经过本地结构校验与三级结果归并，模型原始结论不能直接覆盖硬失败或缺失证据约束。
 
 命令逐 case 输出“计算像素差异”和“AI 语义复核”进度，同时输出本地汇总和最终汇总。AI 请求期间可按 Ctrl+C 取消；工具会停止重试，保存已完成/取消结果，整轮报告标记 `comparisonCancelled`，并返回退出码 130。未启用 AI 时 `finalVerdict` 等于本地 `status`；启用 AI 后退出码以最终汇总为准，`failed` 或 `needs_review` 返回非零。AI 连接失败会按配置重试；最终仍失败时会在 testcase、已提交步骤及区域的 `ai.status` 中记录失败，而不是留下 `not_requested`。
 

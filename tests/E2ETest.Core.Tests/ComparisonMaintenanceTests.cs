@@ -40,11 +40,12 @@ public sealed class ComparisonMaintenanceTests : IDisposable
     {
         Directory.CreateDirectory(_dir);
         string keep = Path.Combine(_dir, "diff-shot-0001.png");
-        string keepEvidence = Path.Combine(_dir, "ai-shot-0001-region-001.png");
+        string keepEvidence = Path.Combine(_dir, "evidence-shot-0001-region-001.png");
         string stale = Path.Combine(_dir, "diff-shot-9999.png");
-        string staleEvidence = Path.Combine(_dir, "ai-shot-9999-region-001.png");
+        string staleEvidence = Path.Combine(_dir, "evidence-shot-9999-region-001.png");
+        string staleLegacyEvidence = Path.Combine(_dir, "ai-shot-9999-region-001.png");
         string unrelated = Path.Combine(_dir, "note.png");
-        foreach (string path in new[] { keep, keepEvidence, stale, staleEvidence, unrelated }) File.WriteAllText(path, "x");
+        foreach (string path in new[] { keep, keepEvidence, stale, staleEvidence, staleLegacyEvidence, unrelated }) File.WriteAllText(path, "x");
         var result = new TestCaseComparisonResult
         {
             Shots = new List<ShotComparisonResult>
@@ -66,6 +67,7 @@ public sealed class ComparisonMaintenanceTests : IDisposable
         Assert.True(File.Exists(keepEvidence));
         Assert.False(File.Exists(stale));
         Assert.False(File.Exists(staleEvidence));
+        Assert.False(File.Exists(staleLegacyEvidence));
         Assert.True(File.Exists(unrelated));
     }
 
@@ -81,12 +83,42 @@ public sealed class ComparisonMaintenanceTests : IDisposable
         };
         string output = Path.Combine(_dir, "sheet.png");
 
-        AiCaseReviewer.CreateEvidenceSheet(region, output, 1080);
+        EvidenceSheetBuilder.Create(region, output, 1080);
 
         using var sheet = new Bitmap(output);
         Assert.Equal(1080, Math.Max(sheet.Width, sheet.Height));
         Assert.True(sheet.Width <= 1080);
         Assert.True(sheet.Height <= 1080);
+    }
+
+    [Fact]
+    public void EvidenceSheetsAreGeneratedForEveryExportedRegionWithoutAiSelectionLimit()
+    {
+        Directory.CreateDirectory(_dir);
+        string source = Path.Combine(_dir, "source.png");
+        using (var bitmap = new Bitmap(40, 30)) bitmap.Save(source, System.Drawing.Imaging.ImageFormat.Png);
+        var regions = new[] { "shot-0001-region-001", "shot-0001-region-002" }
+            .Select(id => new PixelRegion
+            {
+                Id = id, BaselineCropPath = source, ReplayCropPath = source,
+                DiffCropPath = source, OverlayCropPath = source,
+            }).ToList();
+        var testCase = new TestCaseComparisonResult
+        {
+            Shots = new List<ShotComparisonResult>
+            {
+                new() { Pixel = new PixelComparisonResult { Regions = regions } },
+            },
+        };
+
+        EvidenceSheetBuilder.GenerateAll(testCase, _dir, 480);
+
+        Assert.All(regions, region =>
+        {
+            Assert.NotNull(region.AiEvidencePath);
+            Assert.True(File.Exists(region.AiEvidencePath));
+        });
+        Assert.Equal(2, Directory.GetFiles(_dir, "evidence-shot-*.png").Length);
     }
 
     [Fact]
@@ -113,7 +145,44 @@ public sealed class ComparisonMaintenanceTests : IDisposable
 
         Assert.DoesNotContain("3D 动态测距", prompt);
         Assert.Contains("不得臆测", prompt);
+        Assert.DoesNotContain("testCase.testFocus", prompt);
+        Assert.DoesNotContain("testCase.acceptanceCriteria", prompt);
         Assert.Contains("needs_review", prompt);
+    }
+
+    [Fact]
+    public void PromptPipelineOmitsEmptyOptionalStagesAndKeepsEvidenceOrder()
+    {
+        var region = new PixelRegion { Id = "shot-0001-region-001", ChangedPixels = 10 };
+        var shot = new ShotComparisonResult
+        {
+            ShotIndex = 1, Ordinal = 1, BaselinePath = "baseline.png", ReplayPath = "replay.png",
+            Pixel = new PixelComparisonResult { DetectedRegionCount = 1, Regions = [region] },
+        };
+        var testCase = new TestCaseComparisonResult { Name = "case-1", TotalShots = 1, Shots = [shot] };
+
+        var parts = AiPromptPipeline.Compose(testCase, [new AiPromptEvidence(shot, region, "evidence.png")], new AiConfig());
+
+        Assert.Equal(
+            ["fixed_rules", "timeline_metadata", "shot_header", "baseline_full", "replay_full", "region_metadata", "region_evidence", "final_contract"],
+            parts.Select(part => part.Stage));
+        string text = string.Join("\n", parts.Select(part => part.Text).Where(value => value is not null));
+        Assert.DoesNotContain("project-context", text);
+        Assert.DoesNotContain("testcase-guidance", text);
+        Assert.DoesNotContain("测试重点：", text);
+        Assert.DoesNotContain("样例判断标准：", text);
+    }
+
+    [Fact]
+    public void PromptPipelineIncludesOnlyProvidedCaseGuidanceFields()
+    {
+        var testCase = new TestCaseComparisonResult { Name = "case-1", TestFocus = "只关注创建结果。" };
+
+        var parts = AiPromptPipeline.Compose(testCase, [], new AiConfig());
+
+        string guidance = Assert.Single(parts, part => part.Stage == "testcase_guidance").Text!;
+        Assert.Contains("测试重点：只关注创建结果。", guidance);
+        Assert.DoesNotContain("样例判断标准：", guidance);
     }
 
     [Fact]

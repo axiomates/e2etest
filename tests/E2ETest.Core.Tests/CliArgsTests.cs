@@ -46,4 +46,13 @@ public sealed class CliArgsTests
 
         args.Validate(Values, Flags);
     }
+
+    [Fact]
+    public void AllowsExplicitNumberOfPositionalArguments()
+    {
+        var args = CliArgs.Parse(["annotate", "--name", "case-1"]);
+
+        args.Validate(["name"], [], maximumPositionals: 1);
+        Assert.Equal("annotate", args.Positional(0));
+    }
 }
