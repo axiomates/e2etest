@@ -106,13 +106,10 @@ public sealed class TestCaseRepository
 
     public FileLockLease AcquireDesktopLock()
     {
-        string directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "E2ETest",
-            "locks");
-        Directory.CreateDirectory(directory);
-        return AcquireExclusiveFileLock(Path.Combine(directory, "desktop.lock"),
-            "当前 Windows 用户会话已有录制或回放占用桌面输入。");
+        Directory.CreateDirectory(LocksDir);
+        return AcquireExclusiveFileLock(
+            Path.Combine(LocksDir, "desktop.lock"),
+            $"数据根目录 '{Root}' 已有录制或回放占用桌面输入。");
     }
 
     public TestCaseWriteLease AcquireWriteLease(string name)

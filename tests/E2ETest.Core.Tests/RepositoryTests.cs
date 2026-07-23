@@ -55,12 +55,21 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
-    public void DesktopLockIsSharedAcrossDifferentRoots()
+    public void DesktopLockIsScopedToDataRootAndRemovedAfterUse()
     {
         var firstRepo = new TestCaseRepository(Path.Combine(_root, "first"));
-        var secondRepo = new TestCaseRepository(Path.Combine(_root, "second"));
-        using var desktop = firstRepo.AcquireDesktopLock();
-        Assert.Throws<InvalidOperationException>(() => secondRepo.AcquireDesktopLock());
+        var sameRootRepo = new TestCaseRepository(Path.Combine(_root, "first"));
+        var otherRootRepo = new TestCaseRepository(Path.Combine(_root, "second"));
+        string lockPath = Path.Combine(firstRepo.Root, ".locks", "desktop.lock");
+
+        using (firstRepo.AcquireDesktopLock())
+        {
+            Assert.True(File.Exists(lockPath));
+            Assert.Throws<InvalidOperationException>(() => sameRootRepo.AcquireDesktopLock());
+            using var independent = otherRootRepo.AcquireDesktopLock();
+        }
+
+        Assert.False(File.Exists(lockPath));
     }
 
     [Fact]
