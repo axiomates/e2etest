@@ -19,6 +19,8 @@ public sealed class RecordSession : ApplicationContext
     private readonly RecordingStaging _staging;
     private readonly TestCaseWriteLease _writeLease;
     private readonly CaptureRule _capture;
+    private readonly string? _testFocus;
+    private readonly string? _acceptanceCriteria;
     private readonly Recorder _recorder;
     private readonly NotifyIcon _tray;
     private readonly ContextMenuStrip _menu;
@@ -47,13 +49,17 @@ public sealed class RecordSession : ApplicationContext
         TestCaseWriteLease writeLease,
         CaptureRule capture,
         Hotkey screenshotKey,
-        Hotkey stopKey)
+        Hotkey stopKey,
+        string? testFocus,
+        string? acceptanceCriteria)
     {
         _repo = repo;
         _name = name;
         _staging = staging;
         _writeLease = writeLease;
         _capture = capture;
+        _testFocus = testFocus;
+        _acceptanceCriteria = acceptanceCriteria;
         _recorder = new Recorder(screenshotKey, stopKey);
         _recorder.ScreenshotHotkeyPressed += atMs =>
             _controls.Enqueue(new ControlRequest(ControlKind.Screenshot, atMs));
@@ -262,6 +268,8 @@ public sealed class RecordSession : ApplicationContext
             Name = _name,
             CreatedAt = DateTimeOffset.UtcNow,
             DurationMs = duration,
+            TestFocus = _testFocus,
+            AcceptanceCriteria = _acceptanceCriteria,
             Capture = _capture,
             Replay = new ReplaySettings(),
             Shots = _shots,

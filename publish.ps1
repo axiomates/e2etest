@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $cliProject = Join-Path $root "src\E2ETest.Cli\E2ETest.Cli.csproj"
+$launcherProject = Join-Path $root "src\E2ETest.RecordLauncher\E2ETest.RecordLauncher.csproj"
 $viewerProject = Join-Path $root "src\E2ETest.ReportViewer\E2ETest.ReportViewer.csproj"
 $output = Join-Path $root "publish\$Runtime-single"
 
@@ -45,6 +46,24 @@ finally {
 
 Write-Host "发布完成: $exe"
 Write-Host "SHA256: $hash"
+
+dotnet publish $launcherProject `
+    -c $Configuration `
+    -r $Runtime `
+    --self-contained true `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:DebugType=None `
+    -p:DebugSymbols=false `
+    -o $output
+
+$launcherExe = Join-Path $output "e2etest-record-launcher.exe"
+if (-not (Test-Path $launcherExe)) {
+    throw "发布失败：未生成 $launcherExe"
+}
+$launcherHash = (Get-FileHash -LiteralPath $launcherExe -Algorithm SHA256).Hash
+Write-Host "录制启动器发布完成: $launcherExe"
+Write-Host "录制启动器 SHA256: $launcherHash"
 
 dotnet publish $viewerProject `
     -c $Configuration `

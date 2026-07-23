@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\E2ETest.Core\E2ETest.Core.csproj" />
     <ProjectReference Include="..\..\src\E2ETest.Cli\E2ETest.Cli.csproj" />
+    <ProjectReference Include="..\..\src\E2ETest.RecordLauncher\E2ETest.RecordLauncher.csproj" />
   </ItemGroup>
 
 </Project>

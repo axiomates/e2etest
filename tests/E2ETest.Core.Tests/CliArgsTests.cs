@@ -4,7 +4,7 @@ namespace E2ETest.Core.Tests;
 
 public sealed class CliArgsTests
 {
-    private static readonly string[] Values = ["round", "name", "root"];
+    private static readonly string[] Values = ["round", "name", "root", "focus", "criteria"];
     private static readonly string[] Flags = ["ai"];
 
     [Fact]
@@ -45,6 +45,16 @@ public sealed class CliArgsTests
         var args = CliArgs.Parse(["--round", "r1", "--name", "case-1", "--root", ".", "--ai"]);
 
         args.Validate(Values, Flags);
+    }
+
+    [Fact]
+    public void AcceptsOptionalRecordGuidance()
+    {
+        var args = CliArgs.Parse(["--name", "case-1", "--focus", "观察重点", "--criteria", "通过标准"]);
+
+        args.Validate(Values, Flags);
+        Assert.Equal("观察重点", args.Get("focus"));
+        Assert.Equal("通过标准", args.Get("criteria"));
     }
 
     [Fact]

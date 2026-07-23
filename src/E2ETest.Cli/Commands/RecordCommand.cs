@@ -11,7 +11,10 @@ public static class RecordCommand
 {
     public static int Run(CliArgs args)
     {
+        args.Validate(["name", "focus", "criteria", "root"], ["fullscreen", "no-fullscreen"]);
         string name = SafeId.ValidateTestCaseName(args.Get("name") ?? GenerateName());
+        string? testFocus = NormalizeGuidance(args.Get("focus"), "focus");
+        string? acceptanceCriteria = NormalizeGuidance(args.Get("criteria"), "criteria");
         using var logContext = LogContext.PushProperty("TestCaseName", name);
         string root = DataRootResolver.Resolve(args.Get("root"));
         var repo = new TestCaseRepository(root);
@@ -40,7 +43,7 @@ public static class RecordCommand
         {
             Log.Information("开始录制 Fullscreen={Fullscreen}", fullscreen);
             session = new RecordSession(repo, name, staging, writeLease,
-                capture, screenshotKey, stopKey);
+                capture, screenshotKey, stopKey, testFocus, acceptanceCriteria);
 
             Console.WriteLine($"开始录制测试用例 '{name}'");
             Console.WriteLine($"  截图键: {config.Hotkeys.Screenshot}");
@@ -76,8 +79,20 @@ public static class RecordCommand
             session.EventCount, session.ScreenshotCount, session.DurationMs);
         Console.WriteLine($"录制完成: {session.EventCount} 事件, " +
                           $"{session.ScreenshotCount} 截图, {session.DurationMs}ms");
-        Console.WriteLine($"可选：使用 testcase annotate --name \"{name}\" --focus <测试重点> --criteria <判断标准> 为 AI 补充样例指引。");
+        if (testFocus is not null || acceptanceCriteria is not null)
+            Console.WriteLine("AI 测试重点/判断标准已写入测试用例。");
+        else
+            Console.WriteLine($"可选：使用 testcase annotate --name \"{name}\" --focus <测试重点> --criteria <判断标准> 为 AI 补充样例指引。");
         return 0;
+    }
+
+    private static string? NormalizeGuidance(string? value, string parameterName)
+    {
+        if (value is null) return null;
+        string normalized = value.Trim();
+        if (normalized.Length > 4000)
+            throw new ArgumentException($"--{parameterName} 不能超过 4000 个字符。", parameterName);
+        return normalized;
     }
 
     private static string GenerateName() =>

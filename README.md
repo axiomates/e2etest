@@ -274,6 +274,8 @@ logs\e2etest-YYYYMMDD.log
 ```powershell
 .\e2etest.exe record `
   [--name <测试用例名称>] `
+  [--focus <测试重点>] `
+  [--criteria <样例判断标准>] `
   [--fullscreen | --no-fullscreen] `
   [--root <目录>]
 ```
@@ -283,6 +285,8 @@ logs\e2etest-YYYYMMDD.log
 | 参数 | 必需 | 说明 |
 | --- | --- | --- |
 | `--name <测试用例名称>` | 否 | 1～80 字符的合法 Windows 文件名，支持中文和内部空格；省略时自动生成可读唯一名称 |
+| `--focus <测试重点>` | 否 | 最多 4000 字符；录制成功后直接写入 manifest 的 `testFocus`，供 AI 复核使用 |
+| `--criteria <样例判断标准>` | 否 | 最多 4000 字符；录制成功后直接写入 manifest 的 `acceptanceCriteria` |
 | `--fullscreen` | 否 | 强制整张主屏截图，包含任务栏 |
 | `--no-fullscreen` | 否 | 强制使用主屏工作区截图，排除任务栏 |
 | `--root <目录>` | 否 | 指定数据根目录 |
@@ -291,8 +295,11 @@ logs\e2etest-YYYYMMDD.log
 
 ```powershell
 .\e2etest.exe record --name "登录流程"
+.\e2etest.exe record --name "创建立柱" --focus "关注立柱是否创建成功" --criteria "立柱可见且没有错误提示时通过"
 .\e2etest.exe record
 ```
+
+也可以运行同目录发布的 `e2etest-record-launcher.exe` 使用图形界面启动录制。启动器默认把自身目录作为 root，并寻找同目录的 `e2etest.exe`；可在界面中选择其他 root。测试重点和判断标准留空时不会传递对应参数。开始录制后启动器会暂时隐藏，CLI 退出后重新显示录制结果。
 
 录制开始后控制台会隐藏，只保留托盘图标：
 

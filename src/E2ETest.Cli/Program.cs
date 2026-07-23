@@ -58,7 +58,8 @@ static void PrintUsage()
     e2etest — Windows 桌面端到端录制与回放工具
 
     用法:
-      e2etest record [--name <名称>] [--fullscreen | --no-fullscreen] [--root <dir>]
+      e2etest record [--name <名称>] [--focus <测试重点>] [--criteria <判断标准>]
+          [--fullscreen | --no-fullscreen] [--root <dir>]
           创建测试用例；省略 --name 时自动生成名称
 
       e2etest replay [--name <名称>] [--round <id>] [--root <dir>]
