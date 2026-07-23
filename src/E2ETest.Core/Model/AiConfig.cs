@@ -23,6 +23,9 @@ public sealed class AiConfig
     /// <summary>每个 case 最多附带的区域四宫格数，按差异像素数从大到小选择。</summary>
     public int MaxEvidenceRegions { get; set; } = 10;
 
+    /// <summary>OpenAI Chat Completions 请求的最大输出 token 数。</summary>
+    public int MaxOutputTokens { get; set; } = 12000;
+
     /// <summary>一次 AI 复核最多请求次数；仅瞬时故障重试。</summary>
     public int MaxAttempts { get; set; } = 3;
 

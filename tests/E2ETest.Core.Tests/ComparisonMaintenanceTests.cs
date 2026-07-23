@@ -139,6 +139,31 @@ public sealed class ComparisonMaintenanceTests : IDisposable
     }
 
     [Fact]
+    public void MaxOutputTokensDefaultsAndRoundTrips()
+    {
+        Assert.Equal(12000, new AiConfig().MaxOutputTokens);
+        string json = E2ETest.Core.Storage.Json.Serialize(new AiConfig { MaxOutputTokens = 32000 });
+
+        Assert.Contains("\"maxOutputTokens\": 32000", json);
+        Assert.Equal(32000, E2ETest.Core.Storage.Json.Deserialize<AiConfig>(json).MaxOutputTokens);
+    }
+
+    [Fact]
+    public async Task RejectsNonPositiveMaxOutputTokens()
+    {
+        var config = new AiConfig
+        {
+            BaseUrl = "https://example.invalid/v1",
+            ApiKey = "test",
+            Model = "test",
+            MaxOutputTokens = 0,
+        };
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new AiCaseReviewer().ReviewAsync(new TestCaseComparisonResult(), _dir, config));
+    }
+
+    [Fact]
     public void GenericAiInstructionsDoNotAssumeBimSpecificTolerance()
     {
         string prompt = AiCaseReviewer.BuildInstructions(null);

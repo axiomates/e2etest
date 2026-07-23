@@ -46,7 +46,7 @@ public sealed class AiCaseReviewer
         {
             model = config.Model,
             temperature = 0.1,
-            max_tokens = 12000,
+            max_tokens = config.MaxOutputTokens,
             enable_thinking = config.EnableThinking,
             messages = new[] { new { role = "user", content = (object)content } },
         };
@@ -325,7 +325,8 @@ public sealed class AiCaseReviewer
     private static void Validate(AiConfig config)
     {
         if (string.IsNullOrWhiteSpace(config.BaseUrl) || string.IsNullOrWhiteSpace(config.ApiKey) || string.IsNullOrWhiteSpace(config.Model) ||
-            config.MaxImageDimension < 0 || config.MaxEvidenceRegions < 1 || config.MaxAttempts < 1 || config.RetryDelayMs < 0 || config.TimeoutMs <= 0)
+            config.MaxImageDimension < 0 || config.MaxEvidenceRegions < 1 || config.MaxOutputTokens < 1 ||
+            config.MaxAttempts < 1 || config.RetryDelayMs < 0 || config.TimeoutMs <= 0)
             throw new InvalidDataException("ai 配置不完整或无效。");
     }
 
